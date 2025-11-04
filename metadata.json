@@ -1,0 +1,5 @@
+{
+  "name": "Tableau de Saisie des Contributions",
+  "description": "Une application web simple pour permettre la saisie et le suivi des contributions des membres d'une équipe dans un tableau d'évaluation de projet. Les totaux sont calculés automatiquement pour assurer une répartition de 100%.",
+  "requestFramePermissions": []
+}
