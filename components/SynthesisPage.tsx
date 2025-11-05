@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../firebase-config';
 import { doc, getDoc } from 'firebase/firestore';
 import { type RowData, type PageConfig } from '../types';
@@ -21,16 +21,30 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   
-  // Sorting state
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'thematique', direction: 'ascending' });
-
-  // Filtering states
-  const [filterText, setFilterText] = useState('');
-  const [origineFilter, setOrigineFilter] = useState<string>('all');
-  const [difficulteFilter, setDifficulteFilter] = useState<string>('all');
-  const [contributionFilter, setContributionFilter] = useState<number | null>(null);
+  
+  const [filters, setFilters] = useState({
+    thematique: '',
+    origine: 'all',
+    difficulte: 'all',
+    contribution: null as number | null,
+  });
+  
+  const [activePopover, setActivePopover] = useState<string | null>(null);
+  const [popoverInput, setPopoverInput] = useState('');
+  const popoverRef = useRef<HTMLDivElement>(null);
 
   const [currentPage, setCurrentPage] = useState(1);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) {
+        setActivePopover(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -42,9 +56,8 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
           const docSnap = await getDoc(docRef);
           if (docSnap.exists()) {
             return docSnap.data().rows as RowData[];
-          } else {
-            return config.initialData as RowData[];
           }
+          return config.initialData as RowData[];
         });
         
         const allPagesData = await Promise.all(allPromises);
@@ -53,20 +66,15 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
         const aggregationMap = new Map<string, RowData>();
         allRows.forEach(row => {
           if (!row || !row.thematique) return;
-
           const existingRow = aggregationMap.get(row.thematique);
           if (existingRow) {
-            for (let i = 0; i < existingRow.contributions.length; i++) {
-              existingRow.contributions[i] += (row.contributions[i] || 0);
-            }
+            existingRow.contributions = existingRow.contributions.map((c, i) => c + (row.contributions[i] || 0));
           } else {
-            const newRow = JSON.parse(JSON.stringify(row));
-            aggregationMap.set(row.thematique, newRow);
+            aggregationMap.set(row.thematique, JSON.parse(JSON.stringify(row)));
           }
         });
         
         setAggregatedData(Array.from(aggregationMap.values()));
-
       } catch (err) {
         console.error("Erreur lors de la récupération des données de synthèse:", err);
         setError("Impossible de charger les données de synthèse.");
@@ -74,69 +82,52 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
         setLoading(false);
       }
     };
-
     fetchData();
   }, [pageConfigs]);
 
-  const uniqueOrigines = useMemo(
-    () => ['all', ...Array.from(new Set(aggregatedData.map(row => row.origine).filter(Boolean))).sort()],
-    [aggregatedData]
-  );
+  const uniqueOrigines = useMemo(() => ['all', ...Array.from(new Set(aggregatedData.map(r => r.origine).filter(Boolean))).sort()], [aggregatedData]);
+  const uniqueDifficultes = useMemo(() => ['all', ...Array.from(new Set(aggregatedData.map(r => r.difficulte).filter(Boolean))).sort()], [aggregatedData]);
 
-  const uniqueDifficultes = useMemo(
-    () => ['all', ...Array.from(new Set(aggregatedData.map(row => row.difficulte).filter(Boolean))).sort()],
-    [aggregatedData]
-  );
-  
   const sortedAndFilteredData = useMemo(() => {
     let data = [...aggregatedData];
     
-    // 1. Apply all filters
     data = data.filter(row => {
-      const thematiqueMatch = filterText 
-        ? row.thematique.toLowerCase().includes(filterText.toLowerCase()) || row.synthese.toLowerCase().includes(filterText.toLowerCase()) 
-        : true;
-      const origineMatch = origineFilter === 'all' ? true : row.origine === origineFilter;
-      const difficulteMatch = difficulteFilter === 'all' ? true : row.difficulte === difficulteFilter;
-      const contributionMatch = contributionFilter !== null ? (row.contributions[contributionFilter] || 0) > 0 : true;
-      return thematiqueMatch && origineMatch && difficulteMatch && contributionMatch;
+        const thematiqueMatch = filters.thematique ? (row.thematique.toLowerCase().includes(filters.thematique.toLowerCase()) || row.synthese.toLowerCase().includes(filters.thematique.toLowerCase())) : true;
+        const origineMatch = filters.origine === 'all' ? true : row.origine === filters.origine;
+        const difficulteMatch = filters.difficulte === 'all' ? true : row.difficulte === filters.difficulte;
+        const contributionMatch = filters.contribution !== null ? (row.contributions[filters.contribution] || 0) > 0 : true;
+        return thematiqueMatch && origineMatch && difficulteMatch && contributionMatch;
     });
     
-    // 2. Sort the filtered data
-    if (sortConfig !== null) {
+    if (sortConfig) {
       data.sort((a, b) => {
-        let aValue: string | number, bValue: string | number;
-
+        let aValue, bValue;
         if (sortConfig.key === 'total') {
             aValue = a.contributions.reduce((s, c) => s + (c || 0), 0);
             bValue = b.contributions.reduce((s, c) => s + (c || 0), 0);
-        } else if (typeof sortConfig.key === 'string' && sortConfig.key.startsWith('contrib_')) {
-            const index = parseInt(sortConfig.key.split('_')[1], 10);
+        } else if (String(sortConfig.key).startsWith('contrib_')) {
+            const index = parseInt(String(sortConfig.key).split('_')[1]);
             aValue = a.contributions[index] || 0;
             bValue = b.contributions[index] || 0;
         } else {
             aValue = a[sortConfig.key as keyof RowData] as any;
             bValue = b[sortConfig.key as keyof RowData] as any;
         }
-
         if (aValue < bValue) return sortConfig.direction === 'ascending' ? -1 : 1;
         if (aValue > bValue) return sortConfig.direction === 'ascending' ? 1 : -1;
         return 0;
       });
     }
     return data;
-  }, [aggregatedData, sortConfig, filterText, origineFilter, difficulteFilter, contributionFilter]);
+  }, [aggregatedData, sortConfig, filters]);
   
   const resetAllFilters = () => {
-    setFilterText('');
-    setOrigineFilter('all');
-    setDifficulteFilter('all');
-    setContributionFilter(null);
+    setFilters({ thematique: '', origine: 'all', difficulte: 'all', contribution: null });
   };
   
   useEffect(() => {
     setCurrentPage(1);
-  }, [filterText, origineFilter, difficulteFilter, contributionFilter]);
+  }, [filters]);
 
   const totalPages = Math.ceil(sortedAndFilteredData.length / ITEMS_PER_PAGE);
   const currentItems = sortedAndFilteredData.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
@@ -148,15 +139,86 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
     }
     setSortConfig({ key, direction });
   };
-  
-  const handleContributionFilter = (index: number) => {
-    setContributionFilter(currentFilter => currentFilter === index ? null : index);
-  }
 
   const getSortIndicator = (key: SortConfig['key']) => {
-    if (!sortConfig || sortConfig.key !== key) return null;
+    if (!sortConfig || sortConfig.key !== key) return '';
     return sortConfig.direction === 'ascending' ? ' ▲' : ' ▼';
   };
+
+  const activeFiltersCount = Object.values(filters).filter(v => v !== '' && v !== 'all' && v !== null).length;
+
+  const renderFilterPopover = () => {
+    if (!activePopover) return null;
+
+    const applyPopoverFilter = () => {
+        setFilters(f => ({ ...f, [activePopover]: popoverInput }));
+        setActivePopover(null);
+    };
+
+    const clearPopoverFilter = () => {
+        const defaultValue = activePopover === 'thematique' ? '' : 'all';
+        setFilters(f => ({ ...f, [activePopover]: defaultValue }));
+        setPopoverInput('');
+        setActivePopover(null);
+    };
+
+    let content;
+    switch (activePopover) {
+      case 'thematique':
+        content = (
+            <div>
+                <input
+                    type="text"
+                    autoFocus
+                    value={popoverInput}
+                    onChange={e => setPopoverInput(e.target.value)}
+                    className="w-full border border-gray-300 rounded p-1 mb-2"
+                    onKeyDown={e => e.key === 'Enter' && applyPopoverFilter()}
+                />
+            </div>
+        );
+        break;
+      case 'origine':
+        content = (
+            <ul className="max-h-60 overflow-y-auto">
+                {uniqueOrigines.map(o => <li key={o}><button className="w-full text-left p-1 hover:bg-gray-100" onClick={() => { setFilters(f => ({ ...f, origine: o })); setActivePopover(null); }}>{o === 'all' ? 'Toutes les origines' : o}</button></li>)}
+            </ul>
+        );
+        break;
+      case 'difficulte':
+        content = (
+            <ul className="max-h-60 overflow-y-auto">
+                {uniqueDifficultes.map(d => <li key={d}><button className="w-full text-left p-1 hover:bg-gray-100" onClick={() => { setFilters(f => ({ ...f, difficulte: d })); setActivePopover(null); }}>{d === 'all' ? 'Toutes les difficultés' : d}</button></li>)}
+            </ul>
+        );
+        break;
+      default: return null;
+    }
+    
+    return (
+        <div ref={popoverRef} className="absolute top-full mt-2 bg-white border rounded-lg shadow-xl z-30 p-4 w-64">
+            {content}
+            {(activePopover === 'thematique') && (
+                 <div className="flex justify-end gap-2 mt-2">
+                    <button onClick={clearPopoverFilter} className="text-sm text-gray-600 hover:underline">Effacer</button>
+                    <button onClick={applyPopoverFilter} className="text-sm bg-blue-500 text-white px-3 py-1 rounded">Appliquer</button>
+                </div>
+            )}
+        </div>
+    );
+  };
+  
+  const FilterableHeader = ({ title, filterKey }: { title: string, filterKey: 'thematique' | 'origine' | 'difficulte' }) => (
+    <th scope="col" className="px-6 py-4 font-semibold whitespace-nowrap relative">
+      <button onClick={() => {
+          setPopoverInput(filters[filterKey] === 'all' ? '' : filters[filterKey]);
+          setActivePopover(activePopover === filterKey ? null : filterKey);
+      }} className={`hover:text-blue-600 ${filters[filterKey] !== '' && filters[filterKey] !== 'all' ? 'text-blue-600 font-bold' : ''}`}>
+        {title} {filters[filterKey] !== '' && filters[filterKey] !== 'all' && '🔹'}
+      </button>
+      {activePopover === filterKey && renderFilterPopover()}
+    </th>
+  );
   
   const getDifficultyBadge = (difficulty: string) => {
     const baseClasses = "px-3 py-1 text-xs font-semibold rounded-full inline-block whitespace-nowrap";
@@ -167,13 +229,7 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
     if (difficulty.includes('Très difficile')) return <span className={`${baseClasses} bg-red-100 text-red-800`}>{difficulty}</span>;
     return <span>{difficulty}</span>;
   };
-
-  const activeFilters = [
-    origineFilter !== 'all' && `Origine: ${origineFilter}`,
-    difficulteFilter !== 'all' && `Difficulté: ${difficulteFilter}`,
-    contributionFilter !== null && `Contribution: ${teamMembers[contributionFilter]} > 0`
-  ].filter(Boolean);
-
+  
   return (
     <>
       <header className="mb-8">
@@ -186,39 +242,10 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
       </header>
 
       <main className="bg-white rounded-lg shadow-md overflow-hidden">
-        <div className="p-4 border-b bg-gray-50 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
-             <div>
-                <label htmlFor="thematique-search" className="block text-sm font-medium text-gray-700 mb-1">Rechercher</label>
-                <input 
-                  id="thematique-search"
-                  type="text"
-                  placeholder="Thématique ou synthèse..."
-                  value={filterText}
-                  onChange={(e) => setFilterText(e.target.value)}
-                  className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
-                />
-            </div>
-             <div>
-                <label htmlFor="origine-filter" className="block text-sm font-medium text-gray-700 mb-1">Filtrer par Origine</label>
-                <select id="origine-filter" value={origineFilter} onChange={e => setOrigineFilter(e.target.value)} className="w-full bg-white border border-gray-300 rounded-md shadow-sm p-2.5 text-sm">
-                    {uniqueOrigines.map(o => <option key={o} value={o}>{o === 'all' ? 'Toutes' : o}</option>)}
-                </select>
-            </div>
-             <div>
-                <label htmlFor="difficulte-filter" className="block text-sm font-medium text-gray-700 mb-1">Filtrer par Difficulté</label>
-                <select id="difficulte-filter" value={difficulteFilter} onChange={e => setDifficulteFilter(e.target.value)} className="w-full bg-white border border-gray-300 rounded-md shadow-sm p-2.5 text-sm">
-                    {uniqueDifficultes.map(d => <option key={d} value={d}>{d === 'all' ? 'Toutes' : d}</option>)}
-                </select>
-            </div>
-            <button onClick={resetAllFilters} className="py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
-                Réinitialiser les filtres
-            </button>
-        </div>
-
-        {activeFilters.length > 0 && (
+        {activeFiltersCount > 0 && (
             <div className="p-3 bg-blue-50 border-b text-blue-800 text-sm flex items-center justify-between">
                 <span>
-                    Filtres actifs : <strong>{activeFilters.join(' / ')}</strong>
+                    Filtres actifs ({activeFiltersCount})
                 </span>
                 <button onClick={resetAllFilters} className="font-semibold hover:underline">(Tout réinitialiser)</button>
             </div>
@@ -234,14 +261,20 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
             <table className="w-full text-sm text-left text-gray-700">
               <thead className="text-xs text-gray-700 uppercase bg-gray-100 border-b sticky top-0">
                 <tr>
-                  <th scope="col" className="px-6 py-4 font-semibold whitespace-nowrap">Thématique</th>
+                  <FilterableHeader title="Thématique" filterKey="thematique" />
                   <th scope="col" className="px-6 py-4 font-semibold whitespace-nowrap">Synthèse du levier</th>
-                  <th scope="col" className="px-6 py-4 font-semibold whitespace-nowrap">Origine</th>
-                  <th scope="col" className="px-6 py-4 font-semibold whitespace-nowrap">Difficulté</th>
+                  <FilterableHeader title="Origine" filterKey="origine" />
+                  <FilterableHeader title="Difficulté" filterKey="difficulte" />
                   {teamMembers.map((name, index) => (
-                    <th key={name} scope="col" className={`px-6 py-4 font-semibold text-center whitespace-nowrap cursor-pointer hover:bg-gray-200 ${contributionFilter === index ? 'bg-blue-200' : ''}`} onClick={() => handleContributionFilter(index)} title={`Filtrer par ${name}`}>{name}</th>
+                    <th key={name} scope="col" className="px-6 py-4 font-semibold text-center whitespace-nowrap">
+                      <button onClick={() => setFilters(f => ({ ...f, contribution: f.contribution === index ? null : index }))} className={`hover:text-blue-600 w-full ${filters.contribution === index ? 'text-blue-600 font-bold' : ''}`} title={`Filtrer par ${name}`}>
+                        {name} {filters.contribution === index && '🔹'}
+                      </button>
+                    </th>
                   ))}
-                  <th scope="col" className="px-6 py-4 font-semibold text-center whitespace-nowrap cursor-pointer" onClick={() => requestSort('total')}>Total Contrib.{getSortIndicator('total')}</th>
+                  <th scope="col" className="px-6 py-4 font-semibold text-center whitespace-nowrap">
+                    <button onClick={() => requestSort('total')} className="hover:text-blue-600 w-full">Total Contrib.{getSortIndicator('total')}</button>
+                  </th>
                 </tr>
               </thead>
               <tbody>

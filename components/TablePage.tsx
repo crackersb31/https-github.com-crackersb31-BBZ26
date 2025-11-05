@@ -232,13 +232,6 @@ const TablePage: React.FC<TablePageProps> = ({
       onLogout
     );
   };
-  
-  const handleViewHistory = () => {
-    confirmAction(
-      "Vous avez des modifications non sauvegardées. Voulez-vous vraiment voir l'historique ? Les modifications seront perdues.",
-      () => setView('history')
-    );
-  };
 
   const handleBackToSummaryClick = () => {
     confirmAction(
@@ -431,27 +424,27 @@ const TablePage: React.FC<TablePageProps> = ({
         </div>
       )}
 
-      <header className="mb-8">
-        <div className="flex justify-between items-start flex-wrap gap-4">
-          <div className="flex-grow">
-              <button 
-                onClick={handleBackToSummaryClick} 
-                className="py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 mb-4"
-              >
-                &larr; Retour au sommaire
-              </button>
-              <div className="text-center">
-                  <h1 className="text-3xl sm:text-4xl font-bold text-gray-800">{title}</h1>
-                  {subtitle && <p className="mt-1 text-lg text-red-600 font-bold">{subtitle}</p>}
-              </div>
-          </div>
-          <div className="flex flex-col items-end space-y-2">
-            <p className="text-md text-gray-600 text-right">
-              {isAdmin ? "Connecté en tant qu'administrateur" : 
-                <>Connecté en tant que <span className="font-semibold">{currentUser}</span></>}
-            </p>
-            <button onClick={handleLogoutClick} className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">Se déconnecter</button>
-          </div>
+      <header className="mb-8 grid grid-cols-3 items-center">
+        <div className="justify-self-start">
+            <button 
+              onClick={handleBackToSummaryClick} 
+              className="py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+            >
+              &larr; Retour au sommaire
+            </button>
+        </div>
+        <div className="justify-self-center text-center">
+            <h1 className="text-3xl sm:text-4xl font-bold text-gray-800">{title}</h1>
+            {subtitle && <p className="mt-1 text-lg text-red-600 font-bold">{subtitle}</p>}
+        </div>
+        <div className="justify-self-end flex items-center gap-4">
+            <div className="text-right hidden sm:block">
+                <p className="font-semibold">{isAdmin ? "Administrateur" : currentUser}</p>
+                <p className="text-xs text-gray-500">Connecté</p>
+            </div>
+            <button onClick={handleLogoutClick} className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gray-600 hover:bg-gray-700">
+                Se déconnecter
+            </button>
         </div>
       </header>
       <main className="bg-white rounded-lg shadow-md overflow-hidden">
@@ -485,7 +478,6 @@ const TablePage: React.FC<TablePageProps> = ({
                 >
                   Sauvegarder
                 </button>
-                {isAdmin && <button onClick={handleViewHistory} className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500">Historique</button>}
             </div>
         </div>
         <div className="overflow-x-auto">
