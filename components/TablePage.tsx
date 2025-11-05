@@ -152,7 +152,7 @@ const TablePage: React.FC<TablePageProps> = ({
       await batch.commit();
       
       setInitialDataSnapshot(JSON.parse(JSON.stringify(data)));
-      setSaveMessage('Données sauvegardées sur Firebase !');
+      setSaveMessage('Données sauvegardées !');
       setTimeout(() => setSaveMessage(''), 3000);
     } catch (error) {
       console.error("Erreur lors de la sauvegarde sur Firebase", error);
@@ -275,10 +275,30 @@ const TablePage: React.FC<TablePageProps> = ({
   }
 
   const inputClasses = "w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2";
+  
+  const getDifficultyBadge = (difficulty: string) => {
+    const baseClasses = "px-3 py-1 text-xs font-semibold rounded-full inline-block whitespace-nowrap";
+    if (difficulty.includes('Très facile')) {
+        return <span className={`${baseClasses} bg-green-100 text-green-800`}>{difficulty}</span>;
+    }
+    if (difficulty.includes('Facile')) {
+        return <span className={`${baseClasses} bg-emerald-100 text-emerald-800`}>{difficulty}</span>;
+    }
+    if (difficulty.includes('Moyenne')) {
+        return <span className={`${baseClasses} bg-yellow-100 text-yellow-800`}>{difficulty}</span>;
+    }
+    if (difficulty.includes('Difficile')) {
+        return <span className={`${baseClasses} bg-orange-100 text-orange-800`}>{difficulty}</span>;
+    }
+    if (difficulty.includes('Très difficile')) {
+        return <span className={`${baseClasses} bg-red-100 text-red-800`}>{difficulty}</span>;
+    }
+    return <span>{difficulty}</span>;
+  };
 
   const renderStandardTable = () => (
     <table className="w-full text-sm text-left text-gray-700">
-      <thead className="text-xs text-gray-700 uppercase bg-gray-100 border-b">
+      <thead className="text-xs text-gray-700 uppercase bg-gray-100 border-b sticky top-0 z-10">
         <tr>
           <th scope="col" className="px-6 py-4 font-semibold whitespace-nowrap">Thématique / Type de dépense</th>
           <th scope="col" className="px-6 py-4 font-semibold whitespace-nowrap">Origine du levier</th>
@@ -295,14 +315,14 @@ const TablePage: React.FC<TablePageProps> = ({
       </thead>
       <tbody>
         {filteredData.length > 0 ? (
-          filteredData.map((row) => {
+          filteredData.map((row, index) => {
             const rowIndex = data.findIndex(originalRow => originalRow.id === row.id);
             const hasComments = row.comments && Object.keys(row.comments).length > 0;
             return (
-              <tr key={row.id} className="bg-white border-b hover:bg-gray-50">
+              <tr key={row.id} className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} border-b hover:bg-blue-50`}>
                 <td className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">{isAdmin ? <input type="text" value={row.thematique} onChange={(e) => handleCellChange(rowIndex, 'thematique', e.target.value)} className={inputClasses} /> : row.thematique}</td>
                 <td className="px-6 py-4">{isAdmin ? <input type="text" value={row.origine} onChange={(e) => handleCellChange(rowIndex, 'origine', e.target.value)} className={inputClasses} /> : row.origine}</td>
-                <td className="px-6 py-4 whitespace-nowrap">{isAdmin ? <input type="text" value={row.difficulte} onChange={(e) => handleCellChange(rowIndex, 'difficulte', e.target.value)} className={inputClasses} /> : row.difficulte}</td>
+                <td className="px-6 py-4 whitespace-nowrap">{isAdmin ? <input type="text" value={row.difficulte} onChange={(e) => handleCellChange(rowIndex, 'difficulte', e.target.value)} className={inputClasses} /> : getDifficultyBadge(row.difficulte)}</td>
                 <td className="px-6 py-4" style={{ minWidth: '300px' }}>{isAdmin ? <textarea value={row.synthese} onChange={(e) => handleCellChange(rowIndex, 'synthese', e.target.value)} className={inputClasses} rows={3}/> : row.synthese}</td>
                 <td className="px-6 py-4">{isAdmin ? <input type="text" value={row.nature} onChange={(e) => handleCellChange(rowIndex, 'nature', e.target.value)} className={inputClasses} /> : row.nature}</td>
                 <td className="px-6 py-4 relative" style={{ minWidth: '200px' }}>
@@ -412,57 +432,61 @@ const TablePage: React.FC<TablePageProps> = ({
       )}
 
       <header className="mb-8">
-        <div className="flex justify-between items-center flex-wrap gap-4">
-          <div className="text-center flex-grow">
-            <div className="mb-4">
-                <button 
-                  onClick={handleBackToSummaryClick} 
-                  className="py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
-                >
-                  &larr; Retour au sommaire
-                </button>
-            </div>
-            <h1 className="text-3xl sm:text-4xl font-bold text-gray-800">{title}</h1>
-            {subtitle && <p className="mt-1 text-lg text-red-600 font-bold">{subtitle}</p>}
-            <p className="mt-2 text-md text-gray-600">
-              {isAdmin ? "Connecté en tant qu'administrateur. Toutes les colonnes sont modifiables." : 
-                <>Saisissez la contribution pour l'entité <span className="font-semibold">{currentUser}</span>.</>}
-            </p>
+        <div className="flex justify-between items-start flex-wrap gap-4">
+          <div className="flex-grow">
+              <button 
+                onClick={handleBackToSummaryClick} 
+                className="py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 mb-4"
+              >
+                &larr; Retour au sommaire
+              </button>
+              <div className="text-center">
+                  <h1 className="text-3xl sm:text-4xl font-bold text-gray-800">{title}</h1>
+                  {subtitle && <p className="mt-1 text-lg text-red-600 font-bold">{subtitle}</p>}
+              </div>
           </div>
-          <div className="flex items-center space-x-2 sm:space-x-4">
-            {saveMessage && <span className="text-sm text-green-600 font-medium transition-opacity duration-300">{saveMessage}</span>}
-            <button
-              onClick={handleSave}
-              className={`py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-300 ${
-                hasUnsavedChanges
-                  ? 'bg-orange-500 hover:bg-orange-600 focus:ring-orange-400 animate-pulse scale-110'
-                  : 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500'
-              }`}
-            >
-              Sauvegarder
-            </button>
-            {isAdmin && <button onClick={handleViewHistory} className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500">Historique</button>}
+          <div className="flex flex-col items-end space-y-2">
+            <p className="text-md text-gray-600 text-right">
+              {isAdmin ? "Connecté en tant qu'administrateur" : 
+                <>Connecté en tant que <span className="font-semibold">{currentUser}</span></>}
+            </p>
             <button onClick={handleLogoutClick} className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">Se déconnecter</button>
           </div>
         </div>
       </header>
       <main className="bg-white rounded-lg shadow-md overflow-hidden">
-        <div className="p-4 border-b bg-gray-50">
-            <label htmlFor="difficulty-filter" className="block text-sm font-medium text-gray-700 mb-1">
-                Filtrer par difficulté de mise en œuvre
-            </label>
-            <select
-                id="difficulty-filter"
-                value={difficultyFilter}
-                onChange={(e) => setDifficultyFilter(e.target.value)}
-                className="w-full max-w-xs bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
-                aria-label="Filtrer par difficulté"
-            >
-                <option value="all">Toutes</option>
-                {uniqueDifficulties.map(d => (
-                    <option key={d} value={d}>{d}</option>
-                ))}
-            </select>
+        <div className="p-4 border-b bg-gray-50 flex justify-between items-center flex-wrap gap-4">
+            <div>
+                <label htmlFor="difficulty-filter" className="block text-sm font-medium text-gray-700 mb-1">
+                    Filtrer par difficulté
+                </label>
+                <select
+                    id="difficulty-filter"
+                    value={difficultyFilter}
+                    onChange={(e) => setDifficultyFilter(e.target.value)}
+                    className="w-full max-w-xs bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                    aria-label="Filtrer par difficulté"
+                >
+                    <option value="all">Toutes</option>
+                    {uniqueDifficulties.map(d => (
+                        <option key={d} value={d}>{d}</option>
+                    ))}
+                </select>
+            </div>
+             <div className="flex items-center space-x-2 sm:space-x-4">
+                {saveMessage && <span className="text-sm text-green-600 font-medium transition-opacity duration-300">{saveMessage}</span>}
+                <button
+                  onClick={handleSave}
+                  className={`py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-300 ${
+                    hasUnsavedChanges
+                      ? 'bg-orange-500 hover:bg-orange-600 focus:ring-orange-400 animate-pulse scale-110'
+                      : 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500'
+                  }`}
+                >
+                  Sauvegarder
+                </button>
+                {isAdmin && <button onClick={handleViewHistory} className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500">Historique</button>}
+            </div>
         </div>
         <div className="overflow-x-auto">
           {renderStandardTable()}

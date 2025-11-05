@@ -3,13 +3,16 @@ import LoginPage from './components/LoginPage';
 import TablePage from './components/TablePage';
 import SummaryPage from './components/SummaryPage';
 import HistoryPage from './components/HistoryPage';
+import AnalyticsPage from './components/AnalyticsPage';
 import { loginCodes } from './config';
 import { INITIAL_DATA as page1Data } from './data';
 import { INITIAL_DATA_GEH_AA as page2Data } from './data-geh-aa';
 // FIX: Import data for the new 'GEH AG' page
 import { INITIAL_DATA_GEH_AG_PAGE as page3Data } from './data-geh-ag-page';
 import { INITIAL_DATA_GMH as page4Data } from './data-gmh';
-import { type PageConfig } from './types';
+import { type PageConfig, type LoginEntry } from './types';
+import { db } from './firebase-config';
+import { doc, setDoc, collection } from 'firebase/firestore';
 
 const pages: PageConfig[] = [
   {
@@ -45,13 +48,23 @@ const pages: PageConfig[] = [
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<string | null>(null);
-  const [currentView, setCurrentView] = useState<'login' | 'summary' | 'table' | 'history'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'summary' | 'table' | 'history' | 'analytics'>('login');
   const [pageIndex, setPageIndex] = useState(0);
 
-  const handleLogin = (code: string): boolean => {
+  const handleLogin = async (code: string): Promise<boolean> => {
     const user = loginCodes[code.trim().toUpperCase()];
     if (user) {
       setCurrentUser(user);
+      try {
+        const loginEntry: LoginEntry = {
+          user,
+          timestamp: new Date().toISOString(),
+        };
+        const loginCollectionRef = collection(db, 'logins');
+        await setDoc(doc(loginCollectionRef), loginEntry);
+      } catch (error) {
+        console.error("Erreur lors de l'enregistrement de la connexion : ", error);
+      }
       setCurrentView('summary');
       return true;
     }
@@ -75,6 +88,10 @@ const App: React.FC = () => {
   const handleSelectHistory = () => {
     setCurrentView('history');
   };
+
+  const handleSelectAnalytics = () => {
+    setCurrentView('analytics');
+  };
   
   const renderContent = () => {
     if (currentView === 'login' || !currentUser) {
@@ -88,6 +105,7 @@ const App: React.FC = () => {
           pages={pages}
           onSelectPage={handleSelectPage}
           onSelectHistory={handleSelectHistory}
+          onSelectAnalytics={handleSelectAnalytics}
           onLogout={handleLogout}
         />
       );
@@ -114,6 +132,10 @@ const App: React.FC = () => {
       return <HistoryPage onBack={handleBackToSummary} historyKey={null} />;
     }
     
+    if (currentView === 'analytics') {
+        return <AnalyticsPage onBack={handleBackToSummary} />;
+    }
+
     return null;
   }
   

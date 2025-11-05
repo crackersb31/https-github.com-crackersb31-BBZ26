@@ -38,6 +38,11 @@ export interface HistoryEntry {
   pageKey?: string;
 }
 
+export interface LoginEntry {
+  timestamp: string;
+  user: string;
+}
+
 export interface PageConfig {
   title: string;
   subtitle?: string;

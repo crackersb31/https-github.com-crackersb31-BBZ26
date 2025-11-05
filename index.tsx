@@ -5,6 +5,7 @@ import './components/LoginPage';
 import './components/TablePage';
 import './components/HistoryPage';
 import './components/SummaryPage';
+import './components/AnalyticsPage';
 import './config';
 import './data';
 import './data-geh-aa';

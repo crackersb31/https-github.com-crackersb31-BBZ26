@@ -1,20 +1,23 @@
 import React, { useState } from 'react';
 
 interface LoginPageProps {
-  onLogin: (code: string) => boolean;
+  onLogin: (code: string) => Promise<boolean>;
 }
 
 const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!onLogin(code)) {
+    setLoading(true);
+    setError('');
+    const success = await onLogin(code);
+    if (!success) {
       setError('Code de connexion invalide. Veuillez réessayer.');
-    } else {
-      setError('');
     }
+    setLoading(false);
   };
 
   return (
@@ -42,6 +45,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
                 setCode(e.target.value);
                 if (error) setError('');
               }}
+              disabled={loading}
             />
           </div>
 
@@ -50,9 +54,10 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLogin }) => {
           <div>
             <button
               type="submit"
-              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              disabled={loading}
+              className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:bg-blue-400 disabled:cursor-not-allowed"
             >
-              Se connecter
+              {loading ? 'Connexion...' : 'Se connecter'}
             </button>
           </div>
         </form>
