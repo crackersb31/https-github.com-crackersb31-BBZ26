@@ -15,7 +15,7 @@ interface SummaryPageProps {
   onSelectPage: (index: number) => void;
   onLogout: () => void;
   onSelectHistory: () => void;
-  onSelectAnalytics: () => void;
+  onSelectSynthesis: () => void;
 }
 
 const StatCard: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
@@ -25,7 +25,7 @@ const StatCard: React.FC<{ title: string; children: React.ReactNode }> = ({ titl
     </div>
 );
 
-const SummaryPage: React.FC<SummaryPageProps> = ({ currentUser, pages, onSelectPage, onLogout, onSelectHistory, onSelectAnalytics }) => {
+const SummaryPage: React.FC<SummaryPageProps> = ({ currentUser, pages, onSelectPage, onLogout, onSelectHistory, onSelectSynthesis }) => {
   const [stats, setStats] = useState({
     activeUsers: [] as { user: string; score: number }[],
     totalContributions: [] as { user: string; total: number }[],
@@ -116,7 +116,8 @@ const SummaryPage: React.FC<SummaryPageProps> = ({ currentUser, pages, onSelectP
 
   const PageIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>;
   const HistoryIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-teal-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>;
-  const AnalyticsIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>;
+  const SynthesisIcon = () => <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-purple-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>;
+
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col -m-4 sm:-m-6 lg:-m-8">
@@ -173,18 +174,18 @@ const SummaryPage: React.FC<SummaryPageProps> = ({ currentUser, pages, onSelectP
               {currentUser === 'ADMIN' && (
                 <>
                   <div
+                      onClick={onSelectSynthesis}
+                      className="bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300 cursor-pointer flex flex-col items-center justify-center text-center p-6 hover:-translate-y-1 group border-2 border-transparent bg-purple-50"
+                  >
+                      <SynthesisIcon/>
+                      <h3 className="text-md font-bold text-gray-800 mt-4">Synthèse Globale</h3>
+                  </div>
+                  <div
                       onClick={onSelectHistory}
                       className="bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300 cursor-pointer flex flex-col items-center justify-center text-center p-6 hover:-translate-y-1 group border-2 border-transparent bg-teal-50"
                   >
                       <HistoryIcon/>
                       <h3 className="text-md font-bold text-gray-800 mt-4">Historique Global</h3>
-                  </div>
-                  <div
-                      onClick={onSelectAnalytics}
-                      className="bg-white rounded-xl shadow-md hover:shadow-lg transition-all duration-300 cursor-pointer flex flex-col items-center justify-center text-center p-6 hover:-translate-y-1 group border-2 border-transparent bg-purple-50"
-                  >
-                      <AnalyticsIcon/>
-                      <h3 className="text-md font-bold text-gray-800 mt-4">Analyse des Contributions</h3>
                   </div>
                 </>
               )}

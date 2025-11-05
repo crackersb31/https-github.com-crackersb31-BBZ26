@@ -3,7 +3,7 @@ import LoginPage from './components/LoginPage';
 import TablePage from './components/TablePage';
 import SummaryPage from './components/SummaryPage';
 import HistoryPage from './components/HistoryPage';
-import AnalyticsPage from './components/AnalyticsPage';
+import SynthesisPage from './components/SynthesisPage'; // Import de la nouvelle page
 import { loginCodes } from './config';
 import { INITIAL_DATA as page1Data } from './data';
 import { INITIAL_DATA_GEH_AA as page2Data } from './data-geh-aa';
@@ -48,7 +48,7 @@ const pages: PageConfig[] = [
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<string | null>(null);
-  const [currentView, setCurrentView] = useState<'login' | 'summary' | 'table' | 'history' | 'analytics'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'summary' | 'table' | 'history' | 'synthesis'>('login');
   const [pageIndex, setPageIndex] = useState(0);
 
   const handleLogin = async (code: string): Promise<boolean> => {
@@ -89,8 +89,8 @@ const App: React.FC = () => {
     setCurrentView('history');
   };
 
-  const handleSelectAnalytics = () => {
-    setCurrentView('analytics');
+  const handleSelectSynthesis = () => {
+    setCurrentView('synthesis');
   };
   
   const renderContent = () => {
@@ -105,7 +105,7 @@ const App: React.FC = () => {
           pages={pages}
           onSelectPage={handleSelectPage}
           onSelectHistory={handleSelectHistory}
-          onSelectAnalytics={handleSelectAnalytics}
+          onSelectSynthesis={handleSelectSynthesis}
           onLogout={handleLogout}
         />
       );
@@ -131,11 +131,11 @@ const App: React.FC = () => {
     if (currentView === 'history') {
       return <HistoryPage onBack={handleBackToSummary} historyKey={null} />;
     }
-    
-    if (currentView === 'analytics') {
-        return <AnalyticsPage onBack={handleBackToSummary} />;
-    }
 
+    if (currentView === 'synthesis') {
+      return <SynthesisPage onBack={handleBackToSummary} pageConfigs={pages} />;
+    }
+    
     return null;
   }
   
