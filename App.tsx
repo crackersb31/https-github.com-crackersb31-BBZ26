@@ -1,20 +1,15 @@
 import React, { useState } from 'react';
 import LoginPage from './components/LoginPage';
 import TablePage from './components/TablePage';
+import SummaryPage from './components/SummaryPage';
+import HistoryPage from './components/HistoryPage';
 import { loginCodes } from './config';
 import { INITIAL_DATA as page1Data } from './data';
 import { INITIAL_DATA_GEH_AA as page2Data } from './data-geh-aa';
 // FIX: Import data for the new 'GEH AG' page
 import { INITIAL_DATA_GEH_AG_PAGE as page3Data } from './data-geh-ag-page';
 import { INITIAL_DATA_GMH as page4Data } from './data-gmh';
-
-interface PageConfig {
-  title: string;
-  subtitle?: string;
-  initialData: any[];
-  storageKey: string;
-  historyKey: string;
-}
+import { type PageConfig } from './types';
 
 const pages: PageConfig[] = [
   {
@@ -50,13 +45,14 @@ const pages: PageConfig[] = [
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<string | null>(null);
+  const [currentView, setCurrentView] = useState<'login' | 'summary' | 'table' | 'history'>('login');
   const [pageIndex, setPageIndex] = useState(0);
 
   const handleLogin = (code: string): boolean => {
-    // Rend la vérification insensible à la casse et aux espaces de début/fin
     const user = loginCodes[code.trim().toUpperCase()];
     if (user) {
       setCurrentUser(user);
+      setCurrentView('summary');
       return true;
     }
     return false;
@@ -64,32 +60,66 @@ const App: React.FC = () => {
 
   const handleLogout = () => {
     setCurrentUser(null);
-    setPageIndex(0); // Reset to first page
+    setCurrentView('login');
+  };
+
+  const handleSelectPage = (index: number) => {
+    setPageIndex(index);
+    setCurrentView('table');
+  };
+
+  const handleBackToSummary = () => {
+    setCurrentView('summary');
   };
   
-  const currentPageConfig = pages[pageIndex];
+  const handleSelectHistory = () => {
+    setCurrentView('history');
+  };
+  
+  const renderContent = () => {
+    if (currentView === 'login' || !currentUser) {
+      return <LoginPage onLogin={handleLogin} />;
+    }
+    
+    if (currentView === 'summary') {
+      return (
+        <SummaryPage
+          currentUser={currentUser}
+          pages={pages}
+          onSelectPage={handleSelectPage}
+          onSelectHistory={handleSelectHistory}
+          onLogout={handleLogout}
+        />
+      );
+    }
 
-  return (
-    <div className="container mx-auto p-4 sm:p-6 lg:p-8">
-      {currentUser ? (
+    if (currentView === 'table') {
+      const currentPageConfig = pages[pageIndex];
+      return (
         <TablePage
-          key={pageIndex} // Force re-render when page changes
+          key={pageIndex}
           currentUser={currentUser}
           onLogout={handleLogout}
-          // Page specific props
+          onBackToSummary={handleBackToSummary}
           title={currentPageConfig.title}
           subtitle={currentPageConfig.subtitle}
           initialData={currentPageConfig.initialData}
           storageKey={currentPageConfig.storageKey}
           historyKey={currentPageConfig.historyKey}
-          // Navigation props
-          currentPage={pageIndex + 1}
-          totalPages={pages.length}
-          onNavigate={(newIndex) => setPageIndex(newIndex)}
         />
-      ) : (
-        <LoginPage onLogin={handleLogin} />
-      )}
+      );
+    }
+
+    if (currentView === 'history') {
+      return <HistoryPage onBack={handleBackToSummary} historyKey={null} />;
+    }
+    
+    return null;
+  }
+  
+  return (
+    <div className="container mx-auto p-4 sm:p-6 lg:p-8">
+      {renderContent()}
     </div>
   );
 };

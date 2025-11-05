@@ -2,88 +2,160 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { type RowData, type HistoryEntry } from '../types';
 import { teamMembers } from '../config';
 import HistoryPage from './HistoryPage';
+import { db } from '../firebase-config';
+import { doc, getDoc, setDoc, writeBatch, collection } from 'firebase/firestore';
 
 interface TablePageProps {
   currentUser: string;
   onLogout: () => void;
+  onBackToSummary: () => void;
   title: string;
   subtitle?: string;
   initialData: any[];
   storageKey: string;
   historyKey: string;
-  currentPage: number;
-  totalPages: number;
-  onNavigate: (newIndex: number) => void;
 }
 
 const TablePage: React.FC<TablePageProps> = ({
   currentUser,
   onLogout,
+  onBackToSummary,
   title,
   subtitle,
   initialData,
   storageKey,
   historyKey,
-  currentPage,
-  totalPages,
-  onNavigate,
 }) => {
   const [data, setData] = useState<RowData[]>([]);
   const [initialDataSnapshot, setInitialDataSnapshot] = useState<RowData[]>([]);
   const [saveMessage, setSaveMessage] = useState('');
   const [view, setView] = useState<'table' | 'history'>('table');
   const [difficultyFilter, setDifficultyFilter] = useState<string>('all');
+  const [loading, setLoading] = useState<boolean>(true);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  
+  // State for comment modal
+  const [isCommentModalOpen, setIsCommentModalOpen] = useState(false);
+  const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
+  const [commentInput, setCommentInput] = useState('');
 
   useEffect(() => {
-    try {
-      const savedDataJSON = localStorage.getItem(storageKey);
-      const loadedData = savedDataJSON ? JSON.parse(savedDataJSON) : initialData;
-      setData(loadedData);
-      setInitialDataSnapshot(JSON.parse(JSON.stringify(loadedData)));
-    } catch (error) {
-      console.error("Erreur lors du chargement des données depuis le localStorage", error);
-      localStorage.removeItem(storageKey);
-      setData(initialData as RowData[]);
-      setInitialDataSnapshot(JSON.parse(JSON.stringify(initialData)));
-    }
+    const fetchData = async () => {
+      setLoading(true);
+      const docRef = doc(db, 'pagesData', storageKey);
+      try {
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const loadedData = (docSnap.data().rows as RowData[]).map(row => ({
+            ...row,
+            comments: row.comments || {}, // Ensure comments object exists
+            estimationComment: row.estimationComment || '',
+          }));
+          setData(loadedData);
+          setInitialDataSnapshot(JSON.parse(JSON.stringify(loadedData)));
+        } else {
+          console.log("Aucun document trouvé sur Firestore, initialisation avec les données par défaut.");
+          const initialDataTyped = (initialData as RowData[]).map(row => ({
+            ...row,
+            comments: row.comments || {},
+            estimationComment: row.estimationComment || '',
+          }));
+          setData(initialDataTyped);
+          setInitialDataSnapshot(JSON.parse(JSON.stringify(initialDataTyped)));
+          await setDoc(docRef, { rows: initialDataTyped });
+        }
+      } catch (error) {
+        console.error("Erreur lors du chargement des données depuis Firestore", error);
+        const initialDataTyped = (initialData as RowData[]).map(row => ({
+            ...row,
+            comments: row.comments || {},
+            estimationComment: row.estimationComment || '',
+        }));
+        setData(initialDataTyped);
+        setInitialDataSnapshot(JSON.parse(JSON.stringify(initialDataTyped)));
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
   }, [storageKey, initialData]);
 
-  const handleSave = () => {
-    const changes: HistoryEntry[] = [];
+  useEffect(() => {
+    if (loading || data.length === 0 || initialDataSnapshot.length === 0) {
+      setHasUnsavedChanges(false);
+      return;
+    }
+    const isDirty = JSON.stringify(data) !== JSON.stringify(initialDataSnapshot);
+    setHasUnsavedChanges(isDirty);
+  }, [data, initialDataSnapshot, loading]);
+
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  const handleSave = async () => {
+    const changes: Omit<HistoryEntry, 'timestamp'>[] = [];
     const timestamp = new Date().toISOString();
 
     data.forEach((currentRow, rowIndex) => {
       const originalRow = initialDataSnapshot[rowIndex];
       if (!originalRow) return;
 
-      const fieldsToCompare: (keyof Omit<RowData, 'id' | 'contributions'>)[] = [
-        'thematique', 'origine', 'difficulte', 'synthese', 'nature', 'estimation'
+      const fieldsToCompare: (keyof Omit<RowData, 'id' | 'contributions' | 'comments'>)[] = [
+        'thematique', 'origine', 'difficulte', 'synthese', 'nature', 'estimation', 'estimationComment'
       ];
       fieldsToCompare.forEach(field => {
-        if (currentRow[field] !== originalRow[field]) {
-          changes.push({ timestamp, user: currentUser, rowId: currentRow.id, rowThematique: originalRow.thematique, field, oldValue: String(originalRow[field]), newValue: String(currentRow[field]) });
+        const oldValue = originalRow[field] || '';
+        const newValue = currentRow[field] || '';
+        if (newValue !== oldValue) {
+          changes.push({ user: currentUser, rowId: currentRow.id, rowThematique: originalRow.thematique, field, oldValue: String(oldValue), newValue: String(newValue) });
         }
       });
       currentRow.contributions.forEach((newContrib, personIndex) => {
         if (newContrib !== originalRow.contributions[personIndex]) {
-          changes.push({ timestamp, user: currentUser, rowId: currentRow.id, rowThematique: originalRow.thematique, field: `Contribution ${teamMembers[personIndex]}`, oldValue: String(originalRow.contributions[personIndex]), newValue: String(newContrib) });
+          changes.push({ user: currentUser, rowId: currentRow.id, rowThematique: originalRow.thematique, field: `Contribution ${teamMembers[personIndex]}`, oldValue: String(originalRow.contributions[personIndex]), newValue: String(newContrib) });
         }
       });
+      // Compare comments
+      if (JSON.stringify(currentRow.comments) !== JSON.stringify(originalRow.comments)) {
+        changes.push({ user: currentUser, rowId: currentRow.id, rowThematique: originalRow.thematique, field: 'Commentaires', oldValue: JSON.stringify(originalRow.comments), newValue: JSON.stringify(currentRow.comments) });
+      }
     });
+    
+    if (changes.length === 0) {
+        setSaveMessage('Aucune modification à sauvegarder.');
+        setTimeout(() => setSaveMessage(''), 3000);
+        return;
+    }
 
     try {
-      localStorage.setItem(storageKey, JSON.stringify(data));
+      const batch = writeBatch(db);
+      const pageDocRef = doc(db, 'pagesData', storageKey);
+      batch.set(pageDocRef, { rows: data });
+      
       if (changes.length > 0) {
-        const historyJSON = localStorage.getItem(historyKey);
-        const history = historyJSON ? JSON.parse(historyJSON) : [];
-        const updatedHistory = [...history, ...changes];
-        localStorage.setItem(historyKey, JSON.stringify(updatedHistory));
+        const historyCollectionRef = collection(db, 'history');
+        changes.forEach(change => {
+          const newHistoryEntry: HistoryEntry = { ...change, timestamp };
+          const historyDocRef = doc(historyCollectionRef);
+          batch.set(historyDocRef, { ...newHistoryEntry, pageKey: historyKey });
+        });
       }
+      
+      await batch.commit();
+      
       setInitialDataSnapshot(JSON.parse(JSON.stringify(data)));
-      setSaveMessage('Données sauvegardées !');
+      setSaveMessage('Données sauvegardées sur Firebase !');
       setTimeout(() => setSaveMessage(''), 3000);
     } catch (error) {
-      console.error("Erreur lors de la sauvegarde", error);
+      console.error("Erreur lors de la sauvegarde sur Firebase", error);
       setSaveMessage('Erreur de sauvegarde.');
       setTimeout(() => setSaveMessage(''), 3000);
     }
@@ -110,6 +182,70 @@ const TablePage: React.FC<TablePageProps> = ({
       return newData;
     });
   };
+  
+  const handleOpenCommentModal = (rowIndex: number) => {
+    setSelectedRowIndex(rowIndex);
+    const currentComment = data[rowIndex]?.comments?.[currentUser] || '';
+    setCommentInput(currentComment);
+    setIsCommentModalOpen(true);
+  };
+  
+  const handleCloseCommentModal = () => {
+    setIsCommentModalOpen(false);
+    setSelectedRowIndex(null);
+    setCommentInput('');
+  };
+  
+  const handleSaveComment = () => {
+    if (selectedRowIndex === null) return;
+    setData(currentData => {
+        const newData = [...currentData];
+        const newRow = { ...newData[selectedRowIndex] };
+        const newComments = { ...(newRow.comments || {}) };
+
+        if (commentInput.trim() === '') {
+            delete newComments[currentUser];
+        } else {
+            newComments[currentUser] = commentInput;
+        }
+
+        newRow.comments = newComments;
+        newData[selectedRowIndex] = newRow;
+        return newData;
+    });
+    handleCloseCommentModal();
+  };
+
+  const confirmAction = (message: string, action: () => void) => {
+    if (hasUnsavedChanges) {
+      if (window.confirm(message)) {
+        action();
+      }
+    } else {
+      action();
+    }
+  };
+
+  const handleLogoutClick = () => {
+    confirmAction(
+      "Vous avez des modifications non sauvegardées. Voulez-vous vraiment vous déconnecter ? Les modifications seront perdues.",
+      onLogout
+    );
+  };
+  
+  const handleViewHistory = () => {
+    confirmAction(
+      "Vous avez des modifications non sauvegardées. Voulez-vous vraiment voir l'historique ? Les modifications seront perdues.",
+      () => setView('history')
+    );
+  };
+
+  const handleBackToSummaryClick = () => {
+    confirmAction(
+      "Vous avez des modifications non sauvegardées. Voulez-vous vraiment retourner au sommaire ? Les modifications seront perdues.",
+      onBackToSummary
+    );
+  };
 
   const isAdmin = currentUser === 'ADMIN';
 
@@ -125,6 +261,14 @@ const TablePage: React.FC<TablePageProps> = ({
     }),
     [data, difficultyFilter]
   );
+
+  if (loading) {
+    return (
+        <div className="flex items-center justify-center min-h-screen">
+            <div className="text-xl font-semibold text-gray-700">Chargement des données...</div>
+        </div>
+    );
+  }
 
   if (isAdmin && view === 'history') {
     return <HistoryPage onBack={() => setView('table')} historyKey={historyKey} />;
@@ -146,12 +290,14 @@ const TablePage: React.FC<TablePageProps> = ({
             <th key={name} scope="col" className="px-6 py-4 font-semibold text-center whitespace-nowrap">{`Contrib. ${name}`}</th>
           ))}
           <th scope="col" className="px-6 py-4 font-semibold text-center whitespace-nowrap">Total Contrib.</th>
+          <th scope="col" className="px-6 py-4 font-semibold text-center whitespace-nowrap">Commentaires</th>
         </tr>
       </thead>
       <tbody>
         {filteredData.length > 0 ? (
           filteredData.map((row) => {
             const rowIndex = data.findIndex(originalRow => originalRow.id === row.id);
+            const hasComments = row.comments && Object.keys(row.comments).length > 0;
             return (
               <tr key={row.id} className="bg-white border-b hover:bg-gray-50">
                 <td className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">{isAdmin ? <input type="text" value={row.thematique} onChange={(e) => handleCellChange(rowIndex, 'thematique', e.target.value)} className={inputClasses} /> : row.thematique}</td>
@@ -159,7 +305,39 @@ const TablePage: React.FC<TablePageProps> = ({
                 <td className="px-6 py-4 whitespace-nowrap">{isAdmin ? <input type="text" value={row.difficulte} onChange={(e) => handleCellChange(rowIndex, 'difficulte', e.target.value)} className={inputClasses} /> : row.difficulte}</td>
                 <td className="px-6 py-4" style={{ minWidth: '300px' }}>{isAdmin ? <textarea value={row.synthese} onChange={(e) => handleCellChange(rowIndex, 'synthese', e.target.value)} className={inputClasses} rows={3}/> : row.synthese}</td>
                 <td className="px-6 py-4">{isAdmin ? <input type="text" value={row.nature} onChange={(e) => handleCellChange(rowIndex, 'nature', e.target.value)} className={inputClasses} /> : row.nature}</td>
-                <td className="px-6 py-4 whitespace-nowrap">{isAdmin ? <input type="text" value={row.estimation} onChange={(e) => handleCellChange(rowIndex, 'estimation', e.target.value)} className={inputClasses} /> : row.estimation}</td>
+                <td className="px-6 py-4 relative" style={{ minWidth: '200px' }}>
+                    {row.estimationComment && row.estimationComment.trim() !== '' && (
+                        <span className="absolute top-2 right-2 flex items-center justify-center h-4 w-4" title={row.estimationComment}>
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                            <span className="relative inline-flex items-center justify-center rounded-full h-4 w-4 bg-red-600 text-white text-xs font-bold">
+                                i
+                            </span>
+                        </span>
+                    )}
+                    {isAdmin ? (
+                        <div className="flex flex-col gap-1">
+                            <input 
+                                type="text" 
+                                value={row.estimation} 
+                                onChange={(e) => handleCellChange(rowIndex, 'estimation', e.target.value)} 
+                                className={inputClasses} 
+                                aria-label={`Estimation pour ${row.thematique}`}
+                            />
+                            <textarea 
+                                value={row.estimationComment || ''} 
+                                onChange={(e) => handleCellChange(rowIndex, 'estimationComment', e.target.value)} 
+                                className={`${inputClasses} text-sm text-gray-600`} 
+                                placeholder="Commentaire explicatif..."
+                                rows={2}
+                                aria-label={`Commentaire sur l'estimation pour ${row.thematique}`}
+                            />
+                        </div>
+                    ) : (
+                        <div>
+                            <span>{row.estimation}</span>
+                        </div>
+                    )}
+                </td>
                 {row.contributions.map((contribution, personIndex) => (
                   <td key={personIndex} className="px-6 py-4" style={{ minWidth: '120px' }}>
                     <input type="number" min="0" value={contribution} onChange={(e) => handleContributionChange(rowIndex, personIndex, e.target.value)} disabled={!isAdmin && teamMembers[personIndex] !== currentUser} className="w-24 text-center bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 disabled:bg-gray-200 disabled:cursor-not-allowed" aria-label={`Contribution de ${teamMembers[personIndex]} pour ${row.thematique}`} />
@@ -168,12 +346,18 @@ const TablePage: React.FC<TablePageProps> = ({
                 <td className="px-6 py-4 font-bold text-center">
                   {row.contributions.reduce((sum, item) => sum + item, 0).toLocaleString('fr-FR')}
                 </td>
+                 <td className="px-6 py-4 text-center">
+                    <button onClick={() => handleOpenCommentModal(rowIndex)} className="relative py-1 px-3 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                        Gérer
+                        {hasComments && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-sky-500"></span></span>}
+                    </button>
+                </td>
               </tr>
             );
           })
         ) : (
           <tr>
-            <td colSpan={7 + teamMembers.length} className="text-center p-8 text-gray-500">
+            <td colSpan={8 + teamMembers.length} className="text-center p-8 text-gray-500">
               Aucun résultat pour ce filtre.
             </td>
           </tr>
@@ -182,20 +366,64 @@ const TablePage: React.FC<TablePageProps> = ({
     </table>
   );
 
+  const selectedRowForComment = selectedRowIndex !== null ? data[selectedRowIndex] : null;
+
   return (
     <>
+      {/* Comment Modal */}
+      {isCommentModalOpen && selectedRowForComment && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" aria-modal="true" role="dialog">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4">
+                <div className="p-6 border-b">
+                    <h2 className="text-xl font-bold text-gray-800">Commentaires pour :</h2>
+                    <p className="text-md text-gray-600 mt-1">{selectedRowForComment.thematique}</p>
+                </div>
+                <div className="p-6 space-y-4 max-h-96 overflow-y-auto">
+                    {selectedRowForComment.comments && Object.keys(selectedRowForComment.comments).length > 0 ? (
+                        Object.entries(selectedRowForComment.comments).map(([user, comment]) => (
+                            <div key={user}>
+                                <p className="font-semibold text-sm text-gray-700">{user} :</p>
+                                <p className="text-sm text-gray-600 bg-gray-50 p-2 rounded-md whitespace-pre-wrap">{comment}</p>
+                            </div>
+                        ))
+                    ) : (
+                        <p className="text-sm text-gray-500">Aucun commentaire pour cette thématique.</p>
+                    )}
+                    <hr/>
+                    <div>
+                        <label htmlFor="user-comment" className="block text-sm font-semibold text-gray-800 mb-2">
+                            Votre commentaire ({currentUser}) :
+                        </label>
+                        <textarea
+                            id="user-comment"
+                            rows={4}
+                            className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2"
+                            value={commentInput}
+                            onChange={(e) => setCommentInput(e.target.value)}
+                        ></textarea>
+                    </div>
+                </div>
+                <div className="flex justify-end p-4 bg-gray-50 rounded-b-lg space-x-3">
+                    <button onClick={handleCloseCommentModal} className="py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Fermer</button>
+                    <button onClick={handleSaveComment} className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">Enregistrer mon commentaire</button>
+                </div>
+            </div>
+        </div>
+      )}
+
       <header className="mb-8">
         <div className="flex justify-between items-center flex-wrap gap-4">
           <div className="text-center flex-grow">
+            <div className="mb-4">
+                <button 
+                  onClick={handleBackToSummaryClick} 
+                  className="py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                >
+                  &larr; Retour au sommaire
+                </button>
+            </div>
             <h1 className="text-3xl sm:text-4xl font-bold text-gray-800">{title}</h1>
             {subtitle && <p className="mt-1 text-lg text-red-600 font-bold">{subtitle}</p>}
-            {totalPages > 1 && (
-              <div className="flex justify-center items-center space-x-4 mt-4">
-                <button onClick={() => onNavigate(currentPage - 2)} disabled={currentPage === 1} className="py-1 px-3 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">Précédent</button>
-                <span className="text-sm font-medium text-gray-600">Page {currentPage} / {totalPages}</span>
-                <button onClick={() => onNavigate(currentPage)} disabled={currentPage === totalPages} className="py-1 px-3 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">Suivant</button>
-              </div>
-            )}
             <p className="mt-2 text-md text-gray-600">
               {isAdmin ? "Connecté en tant qu'administrateur. Toutes les colonnes sont modifiables." : 
                 <>Saisissez la contribution pour l'entité <span className="font-semibold">{currentUser}</span>.</>}
@@ -203,9 +431,18 @@ const TablePage: React.FC<TablePageProps> = ({
           </div>
           <div className="flex items-center space-x-2 sm:space-x-4">
             {saveMessage && <span className="text-sm text-green-600 font-medium transition-opacity duration-300">{saveMessage}</span>}
-            <button onClick={handleSave} className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">Sauvegarder</button>
-            {isAdmin && <button onClick={() => setView('history')} className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500">Historique</button>}
-            <button onClick={onLogout} className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">Se déconnecter</button>
+            <button
+              onClick={handleSave}
+              className={`py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-300 ${
+                hasUnsavedChanges
+                  ? 'bg-orange-500 hover:bg-orange-600 focus:ring-orange-400 animate-pulse scale-110'
+                  : 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500'
+              }`}
+            >
+              Sauvegarder
+            </button>
+            {isAdmin && <button onClick={handleViewHistory} className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500">Historique</button>}
+            <button onClick={handleLogoutClick} className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gray-600 hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">Se déconnecter</button>
           </div>
         </div>
       </header>

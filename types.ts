@@ -1,5 +1,3 @@
-
-
 export interface RowData {
   id: number;
   thematique: string;
@@ -8,7 +6,9 @@ export interface RowData {
   synthese: string;
   nature: string;
   estimation: string;
+  estimationComment?: string;
   contributions: number[];
+  comments?: Record<string, string>; // user -> comment
 }
 
 // FIX: Added RowDataAg interface to fix compilation error in data-geh-ag.ts
@@ -35,4 +35,13 @@ export interface HistoryEntry {
   field: string;
   oldValue: string;
   newValue: string;
+  pageKey?: string;
+}
+
+export interface PageConfig {
+  title: string;
+  subtitle?: string;
+  initialData: any[];
+  storageKey: string;
+  historyKey: string;
 }

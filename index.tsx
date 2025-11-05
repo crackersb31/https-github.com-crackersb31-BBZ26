@@ -4,12 +4,14 @@ import App from './App';
 import './components/LoginPage';
 import './components/TablePage';
 import './components/HistoryPage';
+import './components/SummaryPage';
 import './config';
 import './data';
 import './data-geh-aa';
 // FIX: Import new data file following existing pattern
 import './data-geh-ag-page';
 import './data-gmh';
+import './firebase-config'; // Initialise Firebase
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
