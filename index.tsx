@@ -6,6 +6,7 @@ import './components/TablePage';
 import './components/HistoryPage';
 import './components/SummaryPage';
 import './components/SynthesisPage'; // Import de la nouvelle page de synthèse
+import './components/ConfigurationPage'; // Import de la nouvelle page de configuration
 import './config';
 import './data';
 import './data-geh-aa';

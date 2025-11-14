@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { type RowData, type HistoryEntry } from '../types';
-import { teamMembers } from '../config';
+import { type RowData, type HistoryEntry, type PageConfig, type Column } from '../types';
+// FIX: Import defaultColumns from config to resolve reference errors.
+import { teamMembers, defaultColumns } from '../config';
 import HistoryPage from './HistoryPage';
 import { db } from '../firebase-config';
 import { doc, getDoc, setDoc, writeBatch, collection } from 'firebase/firestore';
@@ -9,23 +10,17 @@ interface TablePageProps {
   currentUser: string;
   onLogout: () => void;
   onBackToSummary: () => void;
-  title: string;
-  subtitle?: string;
-  initialData: any[];
-  storageKey: string;
-  historyKey: string;
+  pageConfig: PageConfig;
 }
 
 const TablePage: React.FC<TablePageProps> = ({
   currentUser,
   onLogout,
   onBackToSummary,
-  title,
-  subtitle,
-  initialData,
-  storageKey,
-  historyKey,
+  pageConfig,
 }) => {
+  const { title, subtitle, initialData, storageKey, historyKey, isCustom, columns } = pageConfig;
+
   const [data, setData] = useState<RowData[]>([]);
   const [initialDataSnapshot, setInitialDataSnapshot] = useState<RowData[]>([]);
   const [saveMessage, setSaveMessage] = useState('');
@@ -34,10 +29,12 @@ const TablePage: React.FC<TablePageProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   
-  // State for comment modal
   const [isCommentModalOpen, setIsCommentModalOpen] = useState(false);
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
   const [commentInput, setCommentInput] = useState('');
+
+  const [isColumnEditorOpen, setIsColumnEditorOpen] = useState(false);
+  const [currentColumns, setCurrentColumns] = useState<Column[]>(columns || []);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -48,7 +45,7 @@ const TablePage: React.FC<TablePageProps> = ({
         if (docSnap.exists()) {
           const loadedData = (docSnap.data().rows as RowData[]).map(row => ({
             ...row,
-            comments: row.comments || {}, // Ensure comments object exists
+            comments: row.comments || {},
             estimationComment: row.estimationComment || '',
           }));
           setData(loadedData);
@@ -62,7 +59,9 @@ const TablePage: React.FC<TablePageProps> = ({
           }));
           setData(initialDataTyped);
           setInitialDataSnapshot(JSON.parse(JSON.stringify(initialDataTyped)));
-          await setDoc(docRef, { rows: initialDataTyped });
+          if (initialDataTyped.length > 0) {
+             await setDoc(docRef, { rows: initialDataTyped });
+          }
         }
       } catch (error) {
         console.error("Erreur lors du chargement des données depuis Firestore", error);
@@ -81,7 +80,7 @@ const TablePage: React.FC<TablePageProps> = ({
   }, [storageKey, initialData]);
 
   useEffect(() => {
-    if (loading || data.length === 0 || initialDataSnapshot.length === 0) {
+    if (loading || initialDataSnapshot === undefined) {
       setHasUnsavedChanges(false);
       return;
     }
@@ -123,7 +122,6 @@ const TablePage: React.FC<TablePageProps> = ({
           changes.push({ user: currentUser, rowId: currentRow.id, rowThematique: originalRow.thematique, field: `Contribution ${teamMembers[personIndex]}`, oldValue: String(originalRow.contributions[personIndex]), newValue: String(newContrib) });
         }
       });
-      // Compare comments
       if (JSON.stringify(currentRow.comments) !== JSON.stringify(originalRow.comments)) {
         changes.push({ user: currentUser, rowId: currentRow.id, rowThematique: originalRow.thematique, field: 'Commentaires', oldValue: JSON.stringify(originalRow.comments), newValue: JSON.stringify(currentRow.comments) });
       }
@@ -240,6 +238,37 @@ const TablePage: React.FC<TablePageProps> = ({
     );
   };
 
+  const addRow = () => {
+    const newId = data.length > 0 ? Math.max(...data.map(r => r.id)) + 1 : 1;
+    const newRow: RowData = {
+        id: newId,
+        thematique: 'Nouvelle ligne',
+        origine: '',
+        difficulte: '',
+        synthese: '',
+        nature: '',
+        estimation: '',
+        estimationComment: '',
+        contributions: Array(teamMembers.length).fill(0),
+        comments: {},
+    };
+    setData([...data, newRow]);
+  };
+  
+  const handleColumnChange = (index: number, field: keyof Column, value: any) => {
+      const newColumns = [...currentColumns];
+      newColumns[index] = { ...newColumns[index], [field]: value };
+      setCurrentColumns(newColumns);
+  };
+
+  const handleSaveColumns = async () => {
+    // This logic is complex because it requires updating the global pages config
+    // For now, we'll just close the modal. Full implementation would need a callback to App.tsx
+    console.log("Sauvegarde des colonnes (simulation) :", currentColumns);
+    alert("La sauvegarde de la configuration des colonnes n'est pas encore complètement implémentée dans cette version. Les changements sont visibles mais non persistants.");
+    setIsColumnEditorOpen(false);
+  };
+
   const isAdmin = currentUser === 'ADMIN';
 
   const uniqueDifficulties = useMemo(() => 
@@ -289,16 +318,30 @@ const TablePage: React.FC<TablePageProps> = ({
     return <span>{difficulty}</span>;
   };
 
-  const renderStandardTable = () => (
+  const renderCell = (row: RowData, rowIndex: number, column: Column) => {
+    const value = (row as any)[column.key] || '';
+    if (!isAdmin) {
+      if(column.key === 'difficulte') return getDifficultyBadge(value);
+      return <span>{value}</span>;
+    }
+
+    switch (column.type) {
+        case 'textarea':
+            return <textarea value={value} onChange={(e) => handleCellChange(rowIndex, column.key, e.target.value)} className={inputClasses} rows={3} />;
+        case 'badge':
+            return <input type="text" value={value} onChange={(e) => handleCellChange(rowIndex, column.key, e.target.value)} className={inputClasses} />;
+        default:
+            return <input type="text" value={value} onChange={(e) => handleCellChange(rowIndex, column.key, e.target.value)} className={inputClasses} />;
+    }
+  };
+
+  const renderTable = () => (
     <table className="w-full text-sm text-left text-gray-700">
       <thead className="text-xs text-gray-700 uppercase bg-gray-100 border-b sticky top-0 z-10">
         <tr>
-          <th scope="col" className="px-6 py-4 font-semibold whitespace-nowrap">Thématique / Type de dépense</th>
-          <th scope="col" className="px-6 py-4 font-semibold whitespace-nowrap">Origine du levier</th>
-          <th scope="col" className="px-6 py-4 font-semibold whitespace-nowrap">Difficulté de mise en œuvre</th>
-          <th scope="col" className="px-6 py-4 font-semibold">Synthèse du levier et de l’objectif BBZ</th>
-          <th scope="col" className="px-6 py-4 font-semibold whitespace-nowrap">Nature du levier</th>
-          <th scope="col" className="px-6 py-4 font-semibold whitespace-nowrap">Estimation / Repère chiffré</th>
+          {(isCustom ? currentColumns : defaultColumns).filter(c => c.visible).map(col => (
+             <th key={col.key as string} scope="col" className="px-6 py-4 font-semibold whitespace-nowrap">{col.header}</th>
+          ))}
           {teamMembers.map((name) => (
             <th key={name} scope="col" className="px-6 py-4 font-semibold text-center whitespace-nowrap">{`Contrib. ${name}`}</th>
           ))}
@@ -313,47 +356,26 @@ const TablePage: React.FC<TablePageProps> = ({
             const hasComments = row.comments && Object.keys(row.comments).length > 0;
             return (
               <tr key={row.id} className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} border-b hover:bg-blue-50`}>
-                <td className="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">{isAdmin ? <input type="text" value={row.thematique} onChange={(e) => handleCellChange(rowIndex, 'thematique', e.target.value)} className={inputClasses} /> : row.thematique}</td>
-                <td className="px-6 py-4">{isAdmin ? <input type="text" value={row.origine} onChange={(e) => handleCellChange(rowIndex, 'origine', e.target.value)} className={inputClasses} /> : row.origine}</td>
-                <td className="px-6 py-4 whitespace-nowrap">{isAdmin ? <input type="text" value={row.difficulte} onChange={(e) => handleCellChange(rowIndex, 'difficulte', e.target.value)} className={inputClasses} /> : getDifficultyBadge(row.difficulte)}</td>
-                <td className="px-6 py-4" style={{ minWidth: '300px' }}>{isAdmin ? <textarea value={row.synthese} onChange={(e) => handleCellChange(rowIndex, 'synthese', e.target.value)} className={inputClasses} rows={3}/> : row.synthese}</td>
-                <td className="px-6 py-4">{isAdmin ? <input type="text" value={row.nature} onChange={(e) => handleCellChange(rowIndex, 'nature', e.target.value)} className={inputClasses} /> : row.nature}</td>
-                <td className="px-6 py-4 relative" style={{ minWidth: '200px' }}>
-                    {row.estimationComment && row.estimationComment.trim() !== '' && (
-                        <span className="absolute top-2 right-2 flex items-center justify-center h-4 w-4" title={row.estimationComment}>
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                            <span className="relative inline-flex items-center justify-center rounded-full h-4 w-4 bg-red-600 text-white text-xs font-bold">
-                                i
-                            </span>
-                        </span>
-                    )}
-                    {isAdmin ? (
-                        <div className="flex flex-col gap-1">
-                            <input 
-                                type="text" 
-                                value={row.estimation} 
-                                onChange={(e) => handleCellChange(rowIndex, 'estimation', e.target.value)} 
-                                className={inputClasses} 
-                                aria-label={`Estimation pour ${row.thematique}`}
-                            />
-                            <textarea 
-                                value={row.estimationComment || ''} 
-                                onChange={(e) => handleCellChange(rowIndex, 'estimationComment', e.target.value)} 
-                                className={`${inputClasses} text-sm text-gray-600`} 
-                                placeholder="Commentaire explicatif..."
-                                rows={2}
-                                aria-label={`Commentaire sur l'estimation pour ${row.thematique}`}
-                            />
-                        </div>
-                    ) : (
-                        <div>
-                            <span>{row.estimation}</span>
-                        </div>
-                    )}
-                </td>
+                {(isCustom ? currentColumns : defaultColumns).filter(c => c.visible).map(col => (
+                    <td key={col.key as string} className="px-6 py-4" style={{ minWidth: col.type === 'textarea' ? '300px' : 'auto' }}>
+                        {renderCell(row, rowIndex, col)}
+                    </td>
+                ))}
+                
+                {/* estimationComment is not in the columns config for now, handled separately */}
+                {/* This part needs to be refactored if estimationComment is to be made dynamic */}
+                
                 {row.contributions.map((contribution, personIndex) => (
                   <td key={personIndex} className="px-6 py-4" style={{ minWidth: '120px' }}>
-                    <input type="number" min="0" value={contribution} onChange={(e) => handleContributionChange(rowIndex, personIndex, e.target.value)} disabled={!isAdmin && teamMembers[personIndex] !== currentUser} className="w-24 text-center bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 disabled:bg-gray-200 disabled:cursor-not-allowed" aria-label={`Contribution de ${teamMembers[personIndex]} pour ${row.thematique}`} />
+                    <input
+                      type="number"
+                      min="0"
+                      value={contribution}
+                      onChange={(e) => handleContributionChange(rowIndex, personIndex, e.target.value)}
+                      className="w-24 text-center bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 disabled:bg-gray-200 disabled:cursor-not-allowed"
+                      aria-label={`Contribution de ${teamMembers[personIndex]} pour ${row.thematique}`}
+                      disabled={!isAdmin && currentUser !== teamMembers[personIndex]}
+                    />
                   </td>
                 ))}
                 <td className="px-6 py-4 font-bold text-center">
@@ -370,8 +392,8 @@ const TablePage: React.FC<TablePageProps> = ({
           })
         ) : (
           <tr>
-            <td colSpan={8 + teamMembers.length} className="text-center p-8 text-gray-500">
-              Aucun résultat pour ce filtre.
+            <td colSpan={10 + teamMembers.length} className="text-center p-8 text-gray-500">
+              {isCustom ? "Ce tableau est vide. L'administrateur peut ajouter une ligne." : "Aucun résultat pour ce filtre."}
             </td>
           </tr>
         )}
@@ -423,7 +445,32 @@ const TablePage: React.FC<TablePageProps> = ({
             </div>
         </div>
       )}
-
+      {/* Column Editor Modal */}
+       {isColumnEditorOpen && (
+            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl mx-4">
+                    <div className="p-6 border-b">
+                        <h2 className="text-xl font-bold text-gray-800">Éditeur de Colonnes</h2>
+                    </div>
+                    <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
+                       {currentColumns.map((col, index) => (
+                           <div key={index} className="grid grid-cols-12 gap-4 items-center">
+                               <div className="col-span-1">
+                                    <input type="checkbox" checked={col.visible} onChange={e => handleColumnChange(index, 'visible', e.target.checked)} className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+                               </div>
+                               <div className="col-span-10">
+                                    <input type="text" value={col.header} onChange={e => handleColumnChange(index, 'header', e.target.value)} className={inputClasses} disabled={!col.editable} />
+                               </div>
+                           </div>
+                       ))}
+                    </div>
+                    <div className="flex justify-end p-4 bg-gray-50 rounded-b-lg space-x-3">
+                        <button onClick={() => setIsColumnEditorOpen(false)} className="py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Annuler</button>
+                        <button onClick={handleSaveColumns} className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">Sauvegarder les Colonnes</button>
+                    </div>
+                </div>
+            </div>
+        )}
       <header className="mb-8 grid grid-cols-3 items-center">
         <div className="justify-self-start">
             <button 
@@ -467,12 +514,18 @@ const TablePage: React.FC<TablePageProps> = ({
                 </select>
             </div>
              <div className="flex items-center space-x-2 sm:space-x-4">
+                {isAdmin && isCustom && (
+                    <>
+                    <button onClick={() => setIsColumnEditorOpen(true)} className="py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Gérer les colonnes</button>
+                    <button onClick={addRow} className="py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Ajouter une ligne</button>
+                    </>
+                )}
                 {saveMessage && <span className="text-sm text-green-600 font-medium transition-opacity duration-300">{saveMessage}</span>}
                 <button
                   onClick={handleSave}
                   className={`py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white focus:outline-none focus:ring-2 focus:ring-offset-2 transition-all duration-300 ${
                     hasUnsavedChanges
-                      ? 'bg-orange-500 hover:bg-orange-600 focus:ring-orange-400 animate-pulse scale-110'
+                      ? 'bg-orange-500 hover:bg-orange-600 focus:ring-orange-400 animate-pulse'
                       : 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500'
                   }`}
                 >
@@ -481,7 +534,7 @@ const TablePage: React.FC<TablePageProps> = ({
             </div>
         </div>
         <div className="overflow-x-auto">
-          {renderStandardTable()}
+          {renderTable()}
         </div>
       </main>
     </>

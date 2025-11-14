@@ -43,10 +43,21 @@ export interface LoginEntry {
   user: string;
 }
 
+export interface Column {
+  key: keyof RowData | string; // string for future flexibility
+  header: string;
+  visible: boolean;
+  editable: boolean; // Is the column itself (header) editable?
+  type: 'text' | 'textarea' | 'badge' | 'number' | 'comment';
+}
+
 export interface PageConfig {
+  id: string; // Unique ID for the page
   title: string;
   subtitle?: string;
   initialData: any[];
   storageKey: string;
   historyKey: string;
+  isCustom?: boolean; // Flag for custom tables
+  columns?: Column[]; // Configuration for columns in custom tables
 }
