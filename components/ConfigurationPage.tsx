@@ -20,7 +20,6 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
     tabs.push({ id: 'codes', label: "Codes d'accès" });
   }
   
-  // Si l'utilisateur n'est pas admin et qu'un onglet admin est actif, on le redirige.
   useEffect(() => {
     if (!isAdmin && (activeTab === 'droits' || activeTab === 'codes')) {
       setActiveTab('structure');
@@ -33,42 +32,70 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
       case 'structure':
         return (
           <div className="prose max-w-none">
-            <h3 className="text-xl font-semibold text-gray-800">Présentation Générale</h3>
-            <p>
-              Cette application est conçue pour faciliter la saisie collaborative et le suivi des contributions des différentes équipes sur des fiches de synthèse de projet. Elle vise à centraliser l'information, automatiser les calculs et assurer la traçabilité des modifications.
+            <h3 className="text-xl font-semibold text-gray-800">Mission de l'application</h3>
+            <p className="text-gray-800">
+              Cette application est conçue pour <strong className="text-gray-900">centraliser et suivre les contributions</strong> des différentes équipes sur des fiches projet. L'objectif est de collaborer efficacement, d'assurer la traçabilité des modifications et de disposer d'une vue d'ensemble consolidée.
             </p>
-            <h3 className="text-xl font-semibold text-gray-800 mt-6">Architecture des Pages</h3>
-            <p>L'application est organisée autour de plusieurs écrans clés :</p>
-            <ul>
-              <li><strong>Connexion :</strong> Un portail sécurisé où chaque utilisateur s'identifie avec un code unique.</li>
-              <li><strong>Sommaire :</strong> La page d'accueil après connexion, offrant une vue d'ensemble et une navigation vers les différents tableaux et fonctionnalités.</li>
-              <li><strong>Tableaux de saisie :</strong> Des pages dédiées à chaque fiche de synthèse où les utilisateurs peuvent consulter les données et saisir leurs contributions.</li>
-              <li><strong>Création de tableau (Admin) :</strong> Une interface permettant aux administrateurs de créer de nouveaux tableaux personnalisés.</li>
-              <li><strong>Historique Global (Admin) :</strong> Un journal complet de toutes les modifications effectuées sur l'ensemble des tableaux, accessible uniquement aux administrateurs.</li>
-              <li><strong>Synthèse Globale (Admin) :</strong> Une vue consolidée qui agrège les données de tous les tableaux pour une analyse transversale.</li>
-              <li><strong>Configuration & Aide :</strong> La page actuelle, fournissant des informations sur le fonctionnement de l'application.</li>
-            </ul>
-             <h3 className="text-xl font-semibold text-gray-800 mt-6">Technologie</h3>
-             <p>L'application utilise une base de données en temps réel (Firebase Firestore) pour stocker toutes les données, les historiques de modification et les journaux de connexion, garantissant que les informations sont toujours à jour et sécurisées.</p>
+            <h3 className="text-xl font-semibold text-gray-800 mt-6">Navigation et Pages Clés</h3>
+            <p className="text-gray-800">L'application est organisée autour de plusieurs écrans principaux :</p>
+            <dl className="space-y-4">
+                <div>
+                    <dt className="font-semibold text-gray-700">Connexion</dt>
+                    <dd className="pl-4 text-gray-700">Un portail sécurisé où chaque utilisateur s'identifie avec un code unique.</dd>
+                </div>
+                <div>
+                    <dt className="font-semibold text-gray-700">Sommaire</dt>
+                    <dd className="pl-4 text-gray-700">
+                        La page d'accueil qui regroupe l'accès à tous les tableaux et outils. Elle est divisée en deux sections :
+                        <ul className="my-2 text-gray-700">
+                            <li><strong className="text-gray-800">Remontée Sous Unité :</strong> Contient les tableaux <em>GEH AA, GEH AG, GEH TA, GMH</em>.</li>
+                            <li><strong className="text-gray-800">Etat Major Unité :</strong> Regroupe tous les autres tableaux (<em>Fiches de synthèse, DC, DCAB, DCOM, DF, DRH, DT, SST</em>) et les outils.</li>
+                        </ul>
+                    </dd>
+                </div>
+                <div>
+                    <dt className="font-semibold text-gray-700">Tableaux de saisie</dt>
+                    <dd className="pl-4 text-gray-700">Les pages de travail où les données sont consultées et modifiées.</dd>
+                </div>
+                 <div>
+                    <dt className="font-semibold text-gray-700">Outils (visibles sur le Sommaire)</dt>
+                    <dd className="pl-4 text-gray-700">
+                        <ul className="my-2 text-gray-700">
+                            <li><strong className="text-gray-800">Configuration & Aide (Tous) :</strong> La page actuelle.</li>
+                            <li><strong className="text-gray-800">Synthèse Globale (Admin) :</strong> Une vue consolidée qui agrège les données de tous les tableaux.</li>
+                            <li><strong className="text-gray-800">Historique Global (Admin) :</strong> Un journal complet de toutes les modifications.</li>
+                             <li><strong className="text-gray-800">Diagnostic Admin (Admin) :</strong> Page technique pour exporter la configuration de l'application.</li>
+                        </ul>
+                    </dd>
+                </div>
+            </dl>
           </div>
         );
       case 'saisies':
         return (
           <div className="prose max-w-none">
-            <h3 className="text-xl font-semibold text-gray-800">Rôles des Utilisateurs</h3>
-            <p>Il existe deux types de rôles :</p>
-            <ul>
-                <li><strong>Utilisateur standard (membre d'équipe) :</strong> Peut modifier les contributions de sa propre équipe et ajouter des commentaires.</li>
-                <li><strong>Administrateur :</strong> Dispose de droits étendus sur l'ensemble de l'application.</li>
-            </ul>
-            <h3 className="text-xl font-semibold text-gray-800 mt-6">Comment modifier les données ?</h3>
-            <ol>
-                <li><strong>Contributions :</strong> Chaque utilisateur ne peut modifier que la colonne de contribution correspondant à son équipe (ex: l'utilisateur 'GEH AG' ne peut modifier que la colonne 'Contrib. GEH AG'). Les autres colonnes sont en lecture seule.</li>
-                <li><strong>Commentaires :</strong> Chaque utilisateur peut ajouter, modifier ou supprimer son propre commentaire sur n'importe quelle ligne en cliquant sur le bouton "Gérer" dans la colonne "Commentaires". Un indicateur visuel (point bleu) signale la présence de commentaires.</li>
-                <li><strong>Sauvegarde :</strong> Les modifications ne sont pas enregistrées automatiquement. Il est impératif de cliquer sur le bouton <strong>"Sauvegarder"</strong>. Un indicateur visuel (bouton orange et animé) vous alerte en cas de modifications non sauvegardées.</li>
+            <h3 className="text-xl font-semibold text-gray-800">Comment modifier les données ?</h3>
+            <p className="text-gray-800">Les permissions de modification dépendent de votre rôle (Utilisateur ou Administrateur).</p>
+            <ol className="text-gray-700">
+                <li><strong className="text-gray-800">Saisir une contribution :</strong> En tant qu'utilisateur, vous pouvez uniquement modifier les chiffres dans la colonne qui porte le nom de votre équipe. L'administrateur peut tout modifier.</li>
+                <li><strong className="text-gray-800">Ajouter un commentaire :</strong> Cliquez sur le bouton <strong>"Gérer"</strong> dans la colonne "Commentaires" pour ajouter ou modifier votre commentaire sur une ligne. Un point bleu signale la présence de commentaires.</li>
+                <li><strong className="text-gray-800">Filtrer les données :</strong> Utilisez le menu déroulant <strong>"Filtrer par difficulté"</strong> en haut de chaque tableau pour n'afficher que les lignes pertinentes.</li>
             </ol>
-            <div className="mt-4 p-4 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800">
-                <p><strong>Attention :</strong> Si vous quittez une page avec des modifications non sauvegardées, une alerte vous demandera de confirmer. Si vous ignorez cette alerte, vos modifications seront perdues.</p>
+
+            <h3 className="text-xl font-semibold text-gray-800 mt-6">Points Clés à Retenir</h3>
+            <div className="space-y-4">
+                <div className="flex items-start">
+                    <span className="text-2xl mr-4">💾</span>
+                    <div className="text-gray-700">
+                        <strong className="text-gray-800">Sauvegarde Manuelle :</strong> Les modifications ne sont pas automatiques. Cliquez toujours sur <strong>"Sauvegarder"</strong> pour enregistrer votre travail. Le bouton devient orange pour vous alerter des changements non sauvegardés.
+                    </div>
+                </div>
+                <div className="flex items-start">
+                    <span className="text-2xl mr-4">⚠️</span>
+                     <div className="text-gray-700">
+                        <strong className="text-gray-800">Alerte de sortie :</strong> Si vous quittez une page avec des modifications non sauvegardées, le navigateur vous demandera une confirmation. Si vous ignorez l'alerte, vos changements seront perdus.
+                    </div>
+                </div>
             </div>
           </div>
         );
@@ -76,25 +103,29 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
         if (!isAdmin) return null;
         return (
             <div className="prose max-w-none">
-                <h3 className="text-xl font-semibold text-gray-800">Pouvoirs de l'Administrateur</h3>
-                <p>
-                    Le rôle d'administrateur est conçu pour la supervision, la maintenance des données et l'analyse globale. Il dispose de droits étendus qui lui permettent de gérer l'intégralité du contenu de l'application.
+                <h3 className="text-xl font-semibold text-gray-800">Super-pouvoirs de l'Administrateur</h3>
+                <p className="text-gray-800">
+                    Le rôle d'administrateur offre un contrôle total sur l'application. Ces permissions doivent être utilisées avec précaution pour maintenir l'intégrité des données.
                 </p>
-                <h3 className="text-xl font-semibold text-gray-800 mt-6">Permissions spécifiques :</h3>
-                <ul>
-                    <li><strong>Édition complète des tableaux :</strong> Contrairement à un utilisateur standard, l'administrateur peut modifier <strong>tous les champs</strong> de toutes les lignes, y compris "Thématique", "Origine", "Synthèse", "Estimation", etc. Il peut également modifier les contributions de toutes les équipes.</li>
-                    <li><strong>Gestion des tableaux :</strong> L'administrateur peut <strong>créer</strong> de nouveaux tableaux personnalisés et <strong>supprimer</strong> des tableaux existants directement depuis la page Sommaire. La suppression est une action irréversible qui efface toutes les données et l'historique associés.</li>
-                    <li><strong>Tableau de Bord :</strong> Sur la page Sommaire, l'administrateur a accès à un tableau de bord affichant des statistiques d'utilisation, comme les utilisateurs les plus actifs et la répartition des contributions.</li>
-                    <li><strong>Accès à l'Historique Global :</strong> L'administrateur peut consulter la page "Historique Global", qui retrace l'intégralité des modifications effectuées par tous les utilisateurs sur tous les tableaux, avec des options de filtrage avancées.</li>
-                    <li><strong>Accès à la Synthèse Globale :</strong> L'administrateur peut accéder à une vue de "Synthèse Globale" qui agrège et consolide les données de toutes les fiches pour permettre une analyse transversale.</li>
+                
+                <h4 className="font-semibold text-gray-700 mt-4">Gestion du Contenu</h4>
+                <ul className="text-gray-700">
+                    <li><strong className="text-gray-800">Édition Complète :</strong> Modifier <strong>n'importe quel champ</strong> de n'importe quelle ligne dans tous les tableaux (thématique, synthèse, estimations, et toutes les contributions).</li>
+                    <li><strong className="text-gray-800">Ajout de Lignes :</strong> Dans les tableaux de remontées, l'administrateur peut ajouter de nouvelles lignes via le bouton "Ajouter une ligne".</li>
                 </ul>
-                <h3 className="text-xl font-semibold text-gray-800 mt-6">Consultation des codes</h3>
-                <p>
-                  Pour plus de détails, vous pouvez consulter la liste exhaustive de tous les codes d'accès configurés dans l'application et leurs permissions associées dans l'onglet <button onClick={() => setActiveTab('codes')} className="text-blue-600 underline font-semibold hover:text-blue-800 focus:outline-none">Codes d'accès</button>.
-                </p>
-                <div className="mt-4 p-4 bg-sky-50 border-l-4 border-sky-400 text-sky-800">
-                    <p><strong>Responsabilité :</strong> Les modifications effectuées par un administrateur sont également tracées dans l'historique. Ce rôle doit être utilisé avec soin pour garantir l'intégrité des données.</p>
-                </div>
+
+                <h4 className="font-semibold text-gray-700 mt-4">Gestion de la Structure</h4>
+                 <ul className="text-gray-700">
+                    <li><strong className="text-gray-800">Suppression de Tableaux :</strong> Supprimer définitivement un tableau et toutes ses données depuis le Sommaire. <strong className="text-red-600">Cette action est irréversible.</strong></li>
+                    <li><strong className="text-gray-800">Gestion des Colonnes :</strong> Sur les tableaux de remontées, utiliser le bouton "Gérer les colonnes" pour ajouter, supprimer, ou masquer des colonnes.</li>
+                </ul>
+
+                <h4 className="font-semibold text-gray-700 mt-4">Analyse & Supervision</h4>
+                <ul className="text-gray-700">
+                    <li><strong className="text-gray-800">Tableau de Bord Dynamique :</strong> Accéder à des statistiques sur le Sommaire, incluant les utilisateurs les plus actifs et la répartition des contributions.</li>
+                    <li><strong className="text-gray-800">Historique et Synthèse Globale :</strong> Accéder aux pages "Historique Global" et "Synthèse Globale" pour une vue d'ensemble complète.</li>
+                    <li><strong className="text-gray-800">Consultation des Codes :</strong> Voir tous les codes d'accès dans l'onglet <button onClick={() => setActiveTab('codes')} className="text-blue-600 underline font-semibold hover:text-blue-800 focus:outline-none">Codes d'accès</button>.</li>
+                </ul>
             </div>
         );
       case 'codes':
@@ -102,7 +133,7 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
         return (
           <div className="prose max-w-none">
             <h3 className="text-xl font-semibold text-gray-800">Liste des Codes d'Accès et Permissions</h3>
-            <p>
+            <p className="text-gray-800">
               Voici la liste de tous les codes d'accès actuellement configurés dans l'application. Chaque code est associé à un utilisateur et à un niveau de permission spécifique.
             </p>
             <div className="overflow-x-auto mt-4 not-prose">
@@ -130,7 +161,7 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
               </table>
             </div>
              <div className="mt-6 p-4 bg-yellow-50 border-l-4 border-yellow-400 text-yellow-800 prose-p:my-0">
-                <p><strong>Note :</strong> Ces codes sont définis directement dans la configuration de l'application. Pour ajouter, modifier ou supprimer un code, une intervention sur le code source est nécessaire.</p>
+                <p><strong className="text-yellow-900">Note :</strong> Ces codes sont définis directement dans la configuration de l'application. Pour ajouter, modifier ou supprimer un code, une intervention sur le code source est nécessaire.</p>
             </div>
           </div>
         );

@@ -76,7 +76,7 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
         
         setAggregatedData(Array.from(aggregationMap.values()));
       } catch (err) {
-        console.error("Erreur lors de la récupération des données de synthèse:", err);
+        console.error("Erreur lors de la récupération des données de synthèse", err);
         setError("Impossible de charger les données de synthèse.");
       } finally {
         setLoading(false);
@@ -103,8 +103,8 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
       data.sort((a, b) => {
         let aValue, bValue;
         if (sortConfig.key === 'total') {
-            aValue = a.contributions.reduce((s, c) => s + (c || 0), 0);
-            bValue = b.contributions.reduce((s, c) => s + (c || 0), 0);
+            aValue = a.contributions.reduce((s, c) => s + (Number(c) || 0), 0);
+            bValue = b.contributions.reduce((s, c) => s + (Number(c) || 0), 0);
         } else if (String(sortConfig.key).startsWith('contrib_')) {
             const index = parseInt(String(sortConfig.key).split('_')[1]);
             aValue = a.contributions[index] || 0;
@@ -288,7 +288,7 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
                         <td key={i} className="px-6 py-4 text-center">{(contrib || 0).toLocaleString('fr-FR')}</td>
                     ))}
                     <td className="px-6 py-4 font-bold text-center">
-                      {row.contributions.reduce((sum, item) => sum + (item || 0), 0).toLocaleString('fr-FR')}
+                      {row.contributions.reduce((sum, item) => sum + (Number(item) || 0), 0).toLocaleString('fr-FR')}
                     </td>
                   </tr>
                 ))}

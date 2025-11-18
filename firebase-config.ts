@@ -9,7 +9,7 @@ const firebaseConfig = {
   apiKey: "AIzaSyCCEdvEIfb9jrQquWPdiNVcifXzyuQnSNc",
   authDomain: "bbz-2026.firebaseapp.com",
   projectId: "bbz-2026",
-  storageBucket: "bbz-2026.firebasestorage.app",
+  storageBucket: "bbz-2026.appspot.com",
   messagingSenderId: "267533151391",
   appId: "1:267533151391:web:c8c5a25ca605e58b0906aa"
 };

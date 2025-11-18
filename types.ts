@@ -1,6 +1,7 @@
 export interface RowData {
   id: number;
   thematique: string;
+  thematiqueComment?: string; // Commentaire spécifique de l'admin sur la thématique
   origine: string;
   difficulte: string;
   synthese: string;
@@ -9,6 +10,8 @@ export interface RowData {
   estimationComment?: string;
   contributions: number[];
   comments?: Record<string, string>; // user -> comment
+  isUserCreated?: boolean; // Flag to indicate if the row was created by a user (editable by everyone)
+  [key: string]: any; // Allow for dynamic columns
 }
 
 // FIX: Added RowDataAg interface to fix compilation error in data-geh-ag.ts
@@ -44,7 +47,9 @@ export interface LoginEntry {
 }
 
 export interface Column {
-  key: keyof RowData | string; // string for future flexibility
+  // FIX: The type for 'key' was resolving to 'string | number' due to the index signature on RowData, causing type errors.
+  // Since column keys are always strings in this application, this is simplified to 'string'.
+  key: string;
   header: string;
   visible: boolean;
   editable: boolean; // Is the column itself (header) editable?

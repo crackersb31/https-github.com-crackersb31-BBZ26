@@ -1,18 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
-import './components/LoginPage';
-import './components/TablePage';
-import './components/HistoryPage';
-import './components/SummaryPage';
-import './components/SynthesisPage'; // Import de la nouvelle page de synthèse
-import './components/ConfigurationPage'; // Import de la nouvelle page de configuration
-import './config';
-import './data';
-import './data-geh-aa';
-// FIX: Import new data file following existing pattern
-import './data-geh-ag-page';
-import './data-gmh';
 import './firebase-config'; // Initialise Firebase
 
 const rootElement = document.getElementById('root');

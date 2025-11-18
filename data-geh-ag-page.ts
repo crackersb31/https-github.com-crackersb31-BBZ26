@@ -24,13 +24,14 @@ const transformData = (row: RowDataAg): RowData => {
   return {
     id: row.id,
     thematique: row.macroActivite,
+    thematiqueComment: '',
     origine: row.eob || "Non spécifié",
     difficulte: difficultyMap[row.difficulte] || "—",
     synthese: row.prerequis,
     nature: row.natureLevier,
     estimation: estimation || "—",
     estimationComment: '',
-    contributions: [0, 0, 0, 0], // Initialise les contributions à 0
+    contributions: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0], // Initialise les contributions à 0
     comments: {} // Initialise les commentaires
   };
 };

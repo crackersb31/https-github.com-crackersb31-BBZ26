@@ -1,6 +1,6 @@
 import { type Column } from './types';
 
-export const teamMembers = ['GEH AG', 'GEH AA', 'GEH TA', 'GMH'];
+export const teamMembers = ['DCOM', 'DRH', 'SST', 'DC', 'DF', 'DT', 'GEH AG', 'GEH AA', 'GEH TA', 'GMH'];
 
 /**
  * Mappe les codes de connexion aux noms des équipes.
@@ -8,6 +8,12 @@ export const teamMembers = ['GEH AG', 'GEH AA', 'GEH TA', 'GMH'];
  * Le code de connexion détermine la colonne que l'utilisateur peut modifier.
  */
 export const loginCodes: Record<string, string> = {
+  'DCOMHSO26': 'DCOM',
+  'DRHHSO26': 'DRH',
+  'SSTHSO26': 'SST',
+  'DCHSO26': 'DC',
+  'DFHSO26': 'DF',
+  'DTHSO26': 'DT',
   'AGHSO26': 'GEH AG',
   'AAHSO26': 'GEH AA', // Code déduit pour GEH AA
   'TAHSO26': 'GEH TA',
@@ -23,4 +29,13 @@ export const defaultColumns: Column[] = [
     { key: 'synthese', header: 'Synthèse du levier et de l’objectif BBZ', visible: true, editable: true, type: 'textarea' },
     { key: 'nature', header: 'Nature du levier', visible: true, editable: true, type: 'text' },
     { key: 'estimation', header: 'Estimation / Repère chiffré', visible: true, editable: true, type: 'text' },
+    { key: 'estimationComment', header: 'Commentaire Estimation', visible: true, editable: true, type: 'textarea' },
+];
+
+export const difficultyOptions: string[] = [
+    '⚡ Très facile',
+    '🟢 Facile',
+    '🟡 Moyenne',
+    '🟡 Difficile',
+    '🔴 Très difficile',
 ];

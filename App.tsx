@@ -5,8 +5,8 @@ import SummaryPage from './components/SummaryPage';
 import HistoryPage from './components/HistoryPage';
 import SynthesisPage from './components/SynthesisPage';
 import ConfigurationPage from './components/ConfigurationPage';
-import CreatePage from './components/CreatePage'; // Import de la nouvelle page
-import { loginCodes } from './config';
+import AdminDiagnosticsPage from './components/AdminDiagnosticsPage'; // Import de la page de diagnostic
+import { loginCodes, defaultColumns } from './config';
 import { INITIAL_DATA as page1Data } from './data';
 import { INITIAL_DATA_GEH_AA as page2Data } from './data-geh-aa';
 import { INITIAL_DATA_GEH_AG_PAGE as page3Data } from './data-geh-ag-page';
@@ -43,6 +43,16 @@ const initialPages: PageConfig[] = [
     historyKey: "contributionHistory_p3",
   },
   {
+    id: "page12",
+    title: "Remontée GEH TA",
+    subtitle: "",
+    initialData: [],
+    storageKey: "contributionTableData_p12",
+    historyKey: "contributionHistory_p12",
+    isCustom: true,
+    columns: defaultColumns,
+  },
+  {
     id: "page4",
     title: "Remontée GMH",
     subtitle: "",
@@ -50,11 +60,128 @@ const initialPages: PageConfig[] = [
     storageKey: "contributionTableData_p4",
     historyKey: "contributionHistory_p4",
   },
+  {
+    id: "page5",
+    title: "Remontée DT",
+    subtitle: "",
+    initialData: [],
+    storageKey: "contributionTableData_p5",
+    historyKey: "contributionHistory_p5",
+    isCustom: true,
+    columns: defaultColumns,
+  },
+  {
+    id: "page6",
+    title: "Remontée DF",
+    subtitle: "",
+    initialData: [],
+    storageKey: "contributionTableData_p6",
+    historyKey: "contributionHistory_p6",
+    isCustom: true,
+    columns: defaultColumns,
+  },
+  {
+    id: "page7",
+    title: "Remontée DC",
+    subtitle: "",
+    initialData: [],
+    storageKey: "contributionTableData_p7",
+    historyKey: "contributionHistory_p7",
+    isCustom: true,
+    columns: defaultColumns,
+  },
+  {
+    id: "page8",
+    title: "Remontée SST",
+    subtitle: "",
+    initialData: [],
+    storageKey: "contributionTableData_p8",
+    historyKey: "contributionHistory_p8",
+    isCustom: true,
+    columns: defaultColumns,
+  },
+  {
+    id: "page9",
+    title: "Remontée DCOM",
+    subtitle: "",
+    initialData: [],
+    storageKey: "contributionTableData_p9",
+    historyKey: "contributionHistory_p9",
+    isCustom: true,
+    columns: defaultColumns,
+  },
+  {
+    id: "page10",
+    title: "Remontée DCAB",
+    subtitle: "",
+    initialData: [],
+    storageKey: "contributionTableData_p10",
+    historyKey: "contributionHistory_p10",
+    isCustom: true,
+    columns: defaultColumns,
+  },
+  {
+    id: "page11",
+    title: "Remontée DRH",
+    subtitle: "",
+    initialData: [],
+    storageKey: "contributionTableData_p11",
+    historyKey: "contributionHistory_p11",
+    isCustom: true,
+    columns: defaultColumns,
+  },
 ];
+
+const performPageDeletion = async (pages: PageConfig[], pageId: string) => {
+    const pageToDelete = pages.find(p => p.id === pageId);
+    if (!pageToDelete) {
+        console.error("Tableau à supprimer non trouvé", { pageId });
+        return { success: false, updatedPages: pages };
+    }
+    const { storageKey, historyKey } = pageToDelete;
+    const updatedPages = pages.filter(p => p.id !== pageId);
+
+    try {
+        const historyCollectionRef = collection(db, 'history');
+        // FIX: Remplacement de la requête 'where' par un filtre côté client
+        // pour éviter les erreurs liées à un index Firestore manquant.
+        const historySnapshot = await getDocs(historyCollectionRef);
+        const historyDocsToDelete = historySnapshot.docs.filter(doc => doc.data().pageKey === historyKey);
+
+        if (historyDocsToDelete.length > 0) {
+            const BATCH_SIZE = 500;
+            const chunks = [];
+            for (let i = 0; i < historyDocsToDelete.length; i += BATCH_SIZE) {
+                chunks.push(historyDocsToDelete.slice(i, i + BATCH_SIZE));
+            }
+
+            for (const chunk of chunks) {
+                const historyBatch = writeBatch(db);
+                chunk.forEach((doc) => {
+                    historyBatch.delete(doc.ref);
+                });
+                await historyBatch.commit();
+            }
+        }
+
+        const finalBatch = writeBatch(db);
+        const pagesConfigDocRef = doc(db, 'appConfig', 'pages');
+        finalBatch.set(pagesConfigDocRef, { pageList: updatedPages });
+        const pageDataDocRef = doc(db, 'pagesData', storageKey);
+        finalBatch.delete(pageDataDocRef);
+        await finalBatch.commit();
+        
+        return { success: true, updatedPages };
+    } catch (error) {
+        console.error("Erreur lors de la suppression du tableau", error);
+        return { success: false, updatedPages: pages };
+    }
+};
+
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<string | null>(null);
-  const [currentView, setCurrentView] = useState<'login' | 'summary' | 'table' | 'history' | 'synthesis' | 'configuration' | 'createPage'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'summary' | 'table' | 'history' | 'synthesis' | 'configuration' | 'adminDiagnostics'>('login');
   const [pageIndex, setPageIndex] = useState(0);
   const [pages, setPages] = useState<PageConfig[]>([]);
   const [loadingPages, setLoadingPages] = useState(true);
@@ -65,14 +192,49 @@ const App: React.FC = () => {
         try {
             const docSnap = await getDoc(docRef);
             if (docSnap.exists() && docSnap.data().pageList) {
-                setPages(docSnap.data().pageList);
+                let firestorePages: PageConfig[] = docSnap.data().pageList;
+
+                // --- MIGRATION: Supprimer les tableaux personnalisés "Ressources Humaines" et "Direction Communication" ---
+                const titlesToDelete = ["Remontée Ressources Humaines", "Remontée Direction Communication"];
+                const pagesToDelete = firestorePages.filter(p => titlesToDelete.includes(p.title));
+
+                if (pagesToDelete.length > 0) {
+                    console.log(`MIGRATION : ${pagesToDelete.length} tableau(x) à supprimer...`);
+                    let currentPagesList = [...firestorePages];
+                    
+                    for (const page of pagesToDelete) {
+                        console.log(`Tentative de suppression du tableau : "${page.title}" (ID: ${page.id})`);
+                        const result = await performPageDeletion(currentPagesList, page.id);
+                        if (result.success) {
+                            console.log(`- Tableau "${page.title}" supprimé avec succès.`);
+                            currentPagesList = result.updatedPages; // Mettre à jour la liste pour la prochaine itération
+                        } else {
+                            console.error(`- Échec de la suppression du tableau "${page.title}".`);
+                        }
+                    }
+                    firestorePages = currentPagesList; // Mettre à jour la variable principale avec le résultat final
+                    console.log("MIGRATION : Fin du processus de suppression.");
+                }
+                // --- FIN MIGRATION ---
+
+                const firestorePageIds = new Set(firestorePages.map(p => p.id));
+                const missingPages = initialPages.filter(p => !firestorePageIds.has(p.id));
+
+                if (missingPages.length > 0) {
+                    console.log("Mise à jour de la configuration : ajout des pages par défaut manquantes.");
+                    const updatedPages = [...firestorePages, ...missingPages];
+                    await setDoc(docRef, { pageList: updatedPages });
+                    setPages(updatedPages);
+                } else {
+                    setPages(firestorePages);
+                }
             } else {
                 console.log("Configuration des pages non trouvée, initialisation par défaut.");
                 await setDoc(docRef, { pageList: initialPages });
                 setPages(initialPages);
             }
         } catch (error) {
-            console.error("Erreur de chargement de la configuration des pages :", error);
+            console.error("Erreur de chargement de la configuration des pages", error);
             setPages(initialPages); // Fallback to initial pages on error
         } finally {
             setLoadingPages(false);
@@ -93,7 +255,7 @@ const App: React.FC = () => {
         const loginCollectionRef = collection(db, 'logins');
         await setDoc(doc(loginCollectionRef), loginEntry);
       } catch (error) {
-        console.error("Erreur lors de l'enregistrement de la connexion : ", error);
+        console.error("Erreur lors de l'enregistrement de la connexion", error);
       }
       setCurrentView('summary');
       return true;
@@ -126,75 +288,48 @@ const App: React.FC = () => {
   const handleSelectConfiguration = () => {
     setCurrentView('configuration');
   };
-
-  const handleSelectCreatePage = () => {
-    setCurrentView('createPage');
-  };
   
-  const handlePageCreated = (newPage: PageConfig) => {
-    const updatedPages = [...pages, newPage];
-    setPages(updatedPages);
-    const docRef = doc(db, 'appConfig', 'pages');
-    setDoc(docRef, { pageList: updatedPages });
-    setPageIndex(updatedPages.length - 1); // Select the new page
-    setCurrentView('table');
+  const handleSelectAdminDiagnostics = () => {
+    setCurrentView('adminDiagnostics');
   };
   
   const handleDeletePage = async (pageId: string) => {
     if (!window.confirm("Êtes-vous sûr de vouloir supprimer ce tableau ? Toutes ses données et son historique seront définitivement perdus.")) {
         return;
     }
-
     setLoadingPages(true);
-
-    const pageToDelete = pages.find(p => p.id === pageId);
-    if (!pageToDelete) {
-        console.error("Tableau à supprimer non trouvé:", pageId);
-        alert("Erreur: Impossible de trouver le tableau à supprimer.");
-        setLoadingPages(false);
-        return;
-    }
-    const { storageKey, historyKey } = pageToDelete;
-    const updatedPages = pages.filter(p => p.id !== pageId);
-    
-    try {
-        // Étape 1: Supprimer l'historique associé par lots pour éviter de dépasser la limite de 500 opérations.
-        const historyCollectionRef = collection(db, 'history');
-        const q = query(historyCollectionRef, where("pageKey", "==", historyKey));
-        const historySnapshot = await getDocs(q);
-
-        if (!historySnapshot.empty) {
-            const BATCH_SIZE = 500; // Limite de Firestore pour les écritures en batch
-            const chunks = [];
-            for (let i = 0; i < historySnapshot.docs.length; i += BATCH_SIZE) {
-                chunks.push(historySnapshot.docs.slice(i, i + BATCH_SIZE));
-            }
-
-            for (const chunk of chunks) {
-                const historyBatch = writeBatch(db);
-                chunk.forEach((doc) => {
-                    historyBatch.delete(doc.ref);
-                });
-                await historyBatch.commit();
-            }
-        }
-
-        // Étape 2: Supprimer les données de la page et mettre à jour la configuration.
-        const finalBatch = writeBatch(db);
-
-        const pagesConfigDocRef = doc(db, 'appConfig', 'pages');
-        finalBatch.set(pagesConfigDocRef, { pageList: updatedPages });
-
-        const pageDataDocRef = doc(db, 'pagesData', storageKey);
-        finalBatch.delete(pageDataDocRef);
-        
-        await finalBatch.commit();
-        
+    const { success, updatedPages } = await performPageDeletion(pages, pageId);
+    if (success) {
         setPages(updatedPages);
         alert("Le tableau a été supprimé avec succès.");
-    } catch (error) {
-        console.error("Erreur lors de la suppression du tableau :", error);
+    } else {
         alert("Une erreur est survenue lors de la suppression. Veuillez réessayer.");
+    }
+    setLoadingPages(false);
+  };
+  
+  const handleUpdatePageConfig = async (pageId: string, newColumns: Column[]) => {
+    const pageIndexToUpdate = pages.findIndex(p => p.id === pageId);
+    if (pageIndexToUpdate === -1) {
+        console.error("Page à mettre à jour non trouvée", { pageId });
+        return;
+    }
+
+    setLoadingPages(true);
+    const updatedPages = [...pages];
+    updatedPages[pageIndexToUpdate] = {
+        ...updatedPages[pageIndexToUpdate],
+        columns: newColumns,
+    };
+    
+    try {
+        const docRef = doc(db, 'appConfig', 'pages');
+        await setDoc(docRef, { pageList: updatedPages });
+        setPages(updatedPages);
+    } catch (error) {
+        console.error("Erreur lors de la mise à jour de la configuration de la page", error);
+        alert("Erreur lors de la sauvegarde de la configuration des colonnes.");
+        // Optionally revert state change by refetching
     } finally {
         setLoadingPages(false);
     }
@@ -218,7 +353,7 @@ const App: React.FC = () => {
           onSelectHistory={handleSelectHistory}
           onSelectSynthesis={handleSelectSynthesis}
           onSelectConfiguration={handleSelectConfiguration}
-          onSelectCreatePage={handleSelectCreatePage}
+          onSelectAdminDiagnostics={handleSelectAdminDiagnostics}
           onDeletePage={handleDeletePage}
           onLogout={handleLogout}
         />
@@ -234,6 +369,7 @@ const App: React.FC = () => {
           onLogout={handleLogout}
           onBackToSummary={handleBackToSummary}
           pageConfig={currentPageConfig}
+          onUpdatePageConfig={handleUpdatePageConfig}
         />
       );
     }
@@ -250,15 +386,15 @@ const App: React.FC = () => {
         return <ConfigurationPage onBack={handleBackToSummary} currentUser={currentUser} />;
     }
 
-    if (currentView === 'createPage') {
-      return <CreatePage onBack={handleBackToSummary} onPageCreated={handlePageCreated} />;
+    if (currentView === 'adminDiagnostics') {
+        return <AdminDiagnosticsPage onBack={handleBackToSummary} />;
     }
     
     return null;
   }
   
   return (
-    <div className="container mx-auto p-4 sm:p-6 lg:p-8">
+    <div className="p-4 sm:p-6 lg:p-8">
       {renderContent()}
     </div>
   );

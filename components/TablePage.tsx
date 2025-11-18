@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { type RowData, type HistoryEntry, type PageConfig, type Column } from '../types';
 // FIX: Import defaultColumns from config to resolve reference errors.
-import { teamMembers, defaultColumns } from '../config';
+import { teamMembers, defaultColumns, difficultyOptions } from '../config';
 import HistoryPage from './HistoryPage';
 import { db } from '../firebase-config';
 import { doc, getDoc, setDoc, writeBatch, collection } from 'firebase/firestore';
@@ -11,21 +11,31 @@ interface TablePageProps {
   onLogout: () => void;
   onBackToSummary: () => void;
   pageConfig: PageConfig;
+  onUpdatePageConfig: (pageId: string, newColumns: Column[]) => Promise<void>;
 }
+
+const commentFilterOptions = {
+    all: 'Tous les commentaires',
+    'Victoire rapide': 'Victoire rapide',
+    'Sujet versé aux comités unités': 'Sujet versé aux comités unités'
+};
+
 
 const TablePage: React.FC<TablePageProps> = ({
   currentUser,
   onLogout,
   onBackToSummary,
   pageConfig,
+  onUpdatePageConfig,
 }) => {
-  const { title, subtitle, initialData, storageKey, historyKey, isCustom, columns } = pageConfig;
+  const { title, subtitle, initialData, storageKey, historyKey, isCustom, columns, id: pageId } = pageConfig;
 
   const [data, setData] = useState<RowData[]>([]);
   const [initialDataSnapshot, setInitialDataSnapshot] = useState<RowData[]>([]);
   const [saveMessage, setSaveMessage] = useState('');
   const [view, setView] = useState<'table' | 'history'>('table');
   const [difficultyFilter, setDifficultyFilter] = useState<string>('all');
+  const [commentFilter, setCommentFilter] = useState<string>('all');
   const [loading, setLoading] = useState<boolean>(true);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   
@@ -33,8 +43,16 @@ const TablePage: React.FC<TablePageProps> = ({
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
   const [commentInput, setCommentInput] = useState('');
 
+  // State for thematique comment editor
+  const [isThematiqueCommentModalOpen, setIsThematiqueCommentModalOpen] = useState(false);
+  const [thematiqueCommentInput, setThematiqueCommentInput] = useState('');
+
   const [isColumnEditorOpen, setIsColumnEditorOpen] = useState(false);
-  const [currentColumns, setCurrentColumns] = useState<Column[]>(columns || []);
+  const [currentColumns, setCurrentColumns] = useState<Column[]>([]);
+  
+  useEffect(() => {
+    setCurrentColumns(columns || []);
+  }, [columns]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -47,6 +65,7 @@ const TablePage: React.FC<TablePageProps> = ({
             ...row,
             comments: row.comments || {},
             estimationComment: row.estimationComment || '',
+            thematiqueComment: row.thematiqueComment || '', // Ensure field exists
           }));
           setData(loadedData);
           setInitialDataSnapshot(JSON.parse(JSON.stringify(loadedData)));
@@ -56,6 +75,7 @@ const TablePage: React.FC<TablePageProps> = ({
             ...row,
             comments: row.comments || {},
             estimationComment: row.estimationComment || '',
+            thematiqueComment: row.thematiqueComment || '', // Ensure field exists
           }));
           setData(initialDataTyped);
           setInitialDataSnapshot(JSON.parse(JSON.stringify(initialDataTyped)));
@@ -64,11 +84,12 @@ const TablePage: React.FC<TablePageProps> = ({
           }
         }
       } catch (error) {
-        console.error("Erreur lors du chargement des données depuis Firestore", error);
+        console.error(`Erreur chargement Firestore pour ${storageKey}`, error);
         const initialDataTyped = (initialData as RowData[]).map(row => ({
             ...row,
             comments: row.comments || {},
             estimationComment: row.estimationComment || '',
+            thematiqueComment: row.thematiqueComment || '', // Ensure field exists
         }));
         setData(initialDataTyped);
         setInitialDataSnapshot(JSON.parse(JSON.stringify(initialDataTyped)));
@@ -102,32 +123,57 @@ const TablePage: React.FC<TablePageProps> = ({
   const handleSave = async () => {
     const changes: Omit<HistoryEntry, 'timestamp'>[] = [];
     const timestamp = new Date().toISOString();
+    
+    let columnsMetadata = isCustom ? currentColumns : defaultColumns;
+    if (title.includes('Remontée') || title === 'Fiches de synthèse') {
+        columnsMetadata = columnsMetadata.filter(col => col.key !== 'estimationComment');
+    }
+    const columnsToCompare = columnsMetadata.map(c => c.key as keyof RowData);
 
-    data.forEach((currentRow, rowIndex) => {
-      const originalRow = initialDataSnapshot[rowIndex];
-      if (!originalRow) return;
+    data.forEach((currentRow) => {
+      const originalRow = initialDataSnapshot.find(r => r.id === currentRow.id);
 
-      const fieldsToCompare: (keyof Omit<RowData, 'id' | 'contributions' | 'comments'>)[] = [
-        'thematique', 'origine', 'difficulte', 'synthese', 'nature', 'estimation', 'estimationComment'
-      ];
-      fieldsToCompare.forEach(field => {
-        const oldValue = originalRow[field] || '';
-        const newValue = currentRow[field] || '';
-        if (newValue !== oldValue) {
-          changes.push({ user: currentUser, rowId: currentRow.id, rowThematique: originalRow.thematique, field, oldValue: String(oldValue), newValue: String(newValue) });
+      if (!originalRow) {
+        changes.push({
+          user: currentUser,
+          rowId: currentRow.id,
+          rowThematique: currentRow.thematique || `ID ${currentRow.id}`,
+          field: 'Ligne',
+          oldValue: '',
+          newValue: 'Créée',
+        });
+        return;
+      }
+
+      const rowThematiqueForHistory = originalRow.thematique || `ID ${originalRow.id}`;
+
+      columnsToCompare.forEach(key => {
+        const oldValue = originalRow[key] || '';
+        const newValue = currentRow[key] || '';
+        if (String(newValue) !== String(oldValue)) {
+          const columnHeader = columnsMetadata.find(c => c.key === key)?.header || String(key);
+          changes.push({ user: currentUser, rowId: currentRow.id, rowThematique: rowThematiqueForHistory, field: columnHeader, oldValue: String(oldValue), newValue: String(newValue) });
         }
       });
-      currentRow.contributions.forEach((newContrib, personIndex) => {
-        if (newContrib !== originalRow.contributions[personIndex]) {
-          changes.push({ user: currentUser, rowId: currentRow.id, rowThematique: originalRow.thematique, field: `Contribution ${teamMembers[personIndex]}`, oldValue: String(originalRow.contributions[personIndex]), newValue: String(newContrib) });
+       
+      // Compare thematiqueComment specifically
+      if (currentRow.thematiqueComment !== originalRow.thematiqueComment) {
+        changes.push({ user: currentUser, rowId: currentRow.id, rowThematique: rowThematiqueForHistory, field: 'Commentaire sur Thématique', oldValue: originalRow.thematiqueComment || '', newValue: currentRow.thematiqueComment || '' });
+      }
+      
+      (currentRow.contributions || []).forEach((newContrib, personIndex) => {
+        const oldContrib = originalRow.contributions?.[personIndex] || 0;
+        if (newContrib !== oldContrib) {
+          changes.push({ user: currentUser, rowId: currentRow.id, rowThematique: rowThematiqueForHistory, field: `Contribution ${teamMembers[personIndex]}`, oldValue: String(oldContrib), newValue: String(newContrib) });
         }
       });
-      if (JSON.stringify(currentRow.comments) !== JSON.stringify(originalRow.comments)) {
-        changes.push({ user: currentUser, rowId: currentRow.id, rowThematique: originalRow.thematique, field: 'Commentaires', oldValue: JSON.stringify(originalRow.comments), newValue: JSON.stringify(currentRow.comments) });
+
+      if (JSON.stringify(currentRow.comments || {}) !== JSON.stringify(originalRow.comments || {})) {
+        changes.push({ user: currentUser, rowId: currentRow.id, rowThematique: rowThematiqueForHistory, field: 'Commentaires', oldValue: JSON.stringify(originalRow.comments || {}), newValue: JSON.stringify(currentRow.comments || {}) });
       }
     });
     
-    if (changes.length === 0) {
+    if (changes.length === 0 && JSON.stringify(data) === JSON.stringify(initialDataSnapshot)) {
         setSaveMessage('Aucune modification à sauvegarder.');
         setTimeout(() => setSaveMessage(''), 3000);
         return;
@@ -153,7 +199,7 @@ const TablePage: React.FC<TablePageProps> = ({
       setSaveMessage('Données sauvegardées !');
       setTimeout(() => setSaveMessage(''), 3000);
     } catch (error) {
-      console.error("Erreur lors de la sauvegarde sur Firebase", error);
+      console.error(`Erreur sauvegarde Firestore pour ${storageKey}`, error);
       setSaveMessage('Erreur de sauvegarde.');
       setTimeout(() => setSaveMessage(''), 3000);
     }
@@ -165,7 +211,11 @@ const TablePage: React.FC<TablePageProps> = ({
     setData(currentData => {
       const newData = [...currentData];
       const newRow = { ...newData[rowIndex] };
-      const newContributions = [...newRow.contributions];
+      const newContributions = [...(newRow.contributions || [])];
+      // S'assure que le tableau est assez long pour éviter les erreurs
+      while (newContributions.length <= personIndex) {
+          newContributions.push(0);
+      }
       newContributions[personIndex] = newContribution;
       newRow.contributions = newContributions;
       newData[rowIndex] = newRow;
@@ -214,6 +264,30 @@ const TablePage: React.FC<TablePageProps> = ({
     handleCloseCommentModal();
   };
 
+  const handleOpenThematiqueCommentModal = (rowIndex: number) => {
+    setSelectedRowIndex(rowIndex);
+    const currentComment = data[rowIndex]?.thematiqueComment || '';
+    setThematiqueCommentInput(currentComment);
+    setIsThematiqueCommentModalOpen(true);
+  };
+
+  const handleCloseThematiqueCommentModal = () => {
+    setIsThematiqueCommentModalOpen(false);
+    setSelectedRowIndex(null);
+    setThematiqueCommentInput('');
+  };
+
+  const handleSaveThematiqueComment = () => {
+    if (selectedRowIndex === null) return;
+    setData(currentData => {
+        const newData = [...currentData];
+        newData[selectedRowIndex] = { ...newData[selectedRowIndex], thematiqueComment: thematiqueCommentInput };
+        return newData;
+    });
+    handleCloseThematiqueCommentModal();
+  };
+
+
   const confirmAction = (message: string, action: () => void) => {
     if (hasUnsavedChanges) {
       if (window.confirm(message)) {
@@ -243,6 +317,7 @@ const TablePage: React.FC<TablePageProps> = ({
     const newRow: RowData = {
         id: newId,
         thematique: 'Nouvelle ligne',
+        thematiqueComment: '',
         origine: '',
         difficulte: '',
         synthese: '',
@@ -251,7 +326,13 @@ const TablePage: React.FC<TablePageProps> = ({
         estimationComment: '',
         contributions: Array(teamMembers.length).fill(0),
         comments: {},
+        isUserCreated: true, // Marqueur pour permettre l'édition par l'utilisateur
     };
+    (columns || []).forEach(col => {
+        if (!Object.prototype.hasOwnProperty.call(newRow, col.key)) {
+            newRow[col.key] = '';
+        }
+    });
     setData([...data, newRow]);
   };
   
@@ -260,13 +341,40 @@ const TablePage: React.FC<TablePageProps> = ({
       newColumns[index] = { ...newColumns[index], [field]: value };
       setCurrentColumns(newColumns);
   };
+  
+  const addNewColumn = () => {
+    const newColumn: Column = {
+        key: `custom_${Date.now()}`,
+        header: 'Nouvelle Colonne',
+        visible: true,
+        editable: true,
+        type: 'text',
+    };
+    setCurrentColumns([...currentColumns, newColumn]);
+  };
+  
+  const removeColumn = (indexToRemove: number) => {
+    if (!window.confirm("Êtes-vous sûr de vouloir supprimer cette colonne ?")) return;
+    setCurrentColumns(currentColumns.filter((_, index) => index !== indexToRemove));
+  };
 
   const handleSaveColumns = async () => {
-    // This logic is complex because it requires updating the global pages config
-    // For now, we'll just close the modal. Full implementation would need a callback to App.tsx
-    console.log("Sauvegarde des colonnes (simulation) :", currentColumns);
-    alert("La sauvegarde de la configuration des colonnes n'est pas encore complètement implémentée dans cette version. Les changements sont visibles mais non persistants.");
-    setIsColumnEditorOpen(false);
+    for (const col of currentColumns) {
+        if (!col.header.trim()) {
+            alert("Le nom d'une colonne ne peut pas être vide.");
+            return;
+        }
+    }
+    try {
+        await onUpdatePageConfig(pageId, currentColumns);
+        setSaveMessage('Configuration des colonnes sauvegardée !');
+        setTimeout(() => setSaveMessage(''), 3000);
+        setIsColumnEditorOpen(false);
+    } catch (error) {
+        console.error(`Erreur sauvegarde configuration colonnes pour ${pageId}`, error);
+        setSaveMessage('Erreur de sauvegarde de la configuration.');
+        setTimeout(() => setSaveMessage(''), 3000);
+    }
   };
 
   const isAdmin = currentUser === 'ADMIN';
@@ -276,13 +384,33 @@ const TablePage: React.FC<TablePageProps> = ({
     [data]
   );
 
-  const filteredData = useMemo(() => 
+  const filteredData = useMemo(() =>
     data.filter((row) => {
-      if (difficultyFilter === 'all') return true;
-      return row.difficulte === difficultyFilter;
+      const difficultyMatch = difficultyFilter === 'all' || row.difficulte === difficultyFilter;
+
+      let commentMatch = true;
+      if (title === 'Fiches de synthèse' && commentFilter !== 'all') {
+        const adminComment = row.comments?.['ADMIN'];
+        if (!adminComment) {
+          commentMatch = false;
+        } else {
+          const lowerCaseComment = adminComment.toLowerCase();
+          
+          if (commentFilter === 'Victoire rapide') {
+            commentMatch = lowerCaseComment.includes('victoire rapide');
+          } else if (commentFilter === 'Sujet versé aux comités unités') {
+            // Check for 'comité' to catch both singular and plural, case-insensitively
+            commentMatch = lowerCaseComment.includes('comité');
+          } else {
+              commentMatch = false; // Should not happen with current options, but safe to have
+          }
+        }
+      }
+
+      return difficultyMatch && commentMatch;
     }),
-    [data, difficultyFilter]
-  );
+  [data, difficultyFilter, commentFilter, title]);
+
 
   if (loading) {
     return (
@@ -318,11 +446,69 @@ const TablePage: React.FC<TablePageProps> = ({
     return <span>{difficulty}</span>;
   };
 
+  const renderThematiqueCell = (row: RowData, rowIndex: number) => {
+    return (
+      <div className="flex items-center gap-2">
+        {isAdmin || row.isUserCreated ? (
+          <input
+            type="text"
+            value={row.thematique}
+            onChange={(e) => handleCellChange(rowIndex, 'thematique', e.target.value)}
+            className={inputClasses}
+          />
+        ) : (
+          <span>{row.thematique}</span>
+        )}
+  
+        {isAdmin ? (
+          <button
+            onClick={() => handleOpenThematiqueCommentModal(rowIndex)}
+            className={`flex-shrink-0 p-1.5 rounded-full transition-colors ${row.thematiqueComment ? 'bg-sky-200 text-sky-700 hover:bg-sky-300' : 'text-gray-400 hover:bg-gray-200'}`}
+            title="Ajouter/Modifier le commentaire de la thématique"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+          </button>
+        ) : (
+          row.thematiqueComment && (
+            <div className="relative group flex-shrink-0">
+              <span className="flex h-3 w-3">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-sky-500"></span>
+              </span>
+              <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-64 p-2 text-xs text-white bg-gray-800 rounded-md shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-300 z-10 pointer-events-none">
+                {row.thematiqueComment}
+                <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-x-4 border-x-transparent border-t-4 border-t-gray-800"></div>
+              </div>
+            </div>
+          )
+        )}
+      </div>
+    );
+  };
+
   const renderCell = (row: RowData, rowIndex: number, column: Column) => {
     const value = (row as any)[column.key] || '';
-    if (!isAdmin) {
+    // Allow editing if Admin OR if the row was created by a user
+    if (!isAdmin && !row.isUserCreated) {
       if(column.key === 'difficulte') return getDifficultyBadge(value);
       return <span>{value}</span>;
+    }
+
+    if (column.key === 'difficulte') {
+      return (
+        <select
+          value={value}
+          onChange={(e) => handleCellChange(rowIndex, column.key, e.target.value)}
+          className={inputClasses}
+        >
+          <option value="">Sélectionner une difficulté...</option>
+          {difficultyOptions.map(option => (
+            <option key={option} value={option}>{option}</option>
+          ))}
+        </select>
+      );
     }
 
     switch (column.type) {
@@ -335,71 +521,85 @@ const TablePage: React.FC<TablePageProps> = ({
     }
   };
 
-  const renderTable = () => (
-    <table className="w-full text-sm text-left text-gray-700">
-      <thead className="text-xs text-gray-700 uppercase bg-gray-100 border-b sticky top-0 z-10">
-        <tr>
-          {(isCustom ? currentColumns : defaultColumns).filter(c => c.visible).map(col => (
-             <th key={col.key as string} scope="col" className="px-6 py-4 font-semibold whitespace-nowrap">{col.header}</th>
-          ))}
-          {teamMembers.map((name) => (
-            <th key={name} scope="col" className="px-6 py-4 font-semibold text-center whitespace-nowrap">{`Contrib. ${name}`}</th>
-          ))}
-          <th scope="col" className="px-6 py-4 font-semibold text-center whitespace-nowrap">Total Contrib.</th>
-          <th scope="col" className="px-6 py-4 font-semibold text-center whitespace-nowrap">Commentaires</th>
-        </tr>
-      </thead>
-      <tbody>
-        {filteredData.length > 0 ? (
-          filteredData.map((row, index) => {
-            const rowIndex = data.findIndex(originalRow => originalRow.id === row.id);
-            const hasComments = row.comments && Object.keys(row.comments).length > 0;
-            return (
-              <tr key={row.id} className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} border-b hover:bg-blue-50`}>
-                {(isCustom ? currentColumns : defaultColumns).filter(c => c.visible).map(col => (
-                    <td key={col.key as string} className="px-6 py-4" style={{ minWidth: col.type === 'textarea' ? '300px' : 'auto' }}>
-                        {renderCell(row, rowIndex, col)}
+  const renderTable = () => {
+    let baseColumns = isCustom ? currentColumns : defaultColumns;
+    // Supprimer la colonne "Commentaire Estimation" pour les remontées ET pour la fiche de synthèse
+    if (title.includes('Remontée') || title === 'Fiches de synthèse') {
+        baseColumns = baseColumns.filter(col => col.key !== 'estimationComment');
+    }
+    const visibleColumns = baseColumns.filter(c => c.visible);
+
+    const isRemonteeCommunication = title.trim().toLowerCase() === 'remontée communication';
+    const totalColumnCount = visibleColumns.length + (isRemonteeCommunication ? teamMembers.length - 1 : teamMembers.length) + 2;
+
+
+    return (
+        <table className="w-full text-sm text-left text-gray-700">
+          <thead className="text-xs text-gray-700 uppercase bg-gray-100 border-b sticky top-0 z-20 shadow-sm">
+            <tr>
+              {visibleColumns.map(col => (
+                 <th key={col.key as string} scope="col" className="px-6 py-4 font-semibold whitespace-nowrap">{col.header}</th>
+              ))}
+              {teamMembers.map((name) => {
+                if (isRemonteeCommunication && name === 'DCOM') return null;
+                return <th key={name} scope="col" className="px-6 py-4 font-semibold text-center whitespace-nowrap">{`Contrib. ${name}`}</th>
+              })}
+              <th scope="col" className="px-6 py-4 font-semibold text-center whitespace-nowrap">Total Contrib.</th>
+              <th scope="col" className="px-6 py-4 font-semibold text-center whitespace-nowrap">Commentaires</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredData.length > 0 ? (
+              filteredData.map((row, index) => {
+                const rowIndex = data.findIndex(originalRow => originalRow.id === row.id);
+                const hasComments = row.comments && Object.keys(row.comments).length > 0;
+                return (
+                  <tr key={row.id} className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} border-b hover:bg-blue-50`}>
+                    {visibleColumns.map(col => (
+                        <td key={col.key as string} className="px-6 py-4" style={{ minWidth: (col.key === 'thematique') ? '350px' : (col.type === 'textarea' || (title.includes('Remontée') && col.key === 'nature')) ? '300px' : 'auto' }}>
+                             {col.key === 'thematique' ? renderThematiqueCell(row, rowIndex) : renderCell(row, rowIndex, col)}
+                        </td>
+                    ))}
+                    
+                    {teamMembers.map((name, personIndex) => {
+                      if (isRemonteeCommunication && name === 'DCOM') return null;
+                      return (
+                      <td key={personIndex} className="px-6 py-4" style={{ minWidth: '120px' }}>
+                        <input
+                          type="number"
+                          min="0"
+                          value={row.contributions?.[personIndex] || 0}
+                          onChange={(e) => handleContributionChange(rowIndex, personIndex, e.target.value)}
+                          className="w-24 text-center bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 disabled:bg-gray-200 disabled:cursor-not-allowed"
+                          aria-label={`Contribution de ${teamMembers[personIndex]} pour ${row.thematique}`}
+                          disabled={!isAdmin && teamMembers[personIndex] !== currentUser}
+                        />
+                      </td>
+                    )})}
+                    <td className="px-6 py-4 font-bold text-center">
+                      {(row.contributions || []).reduce((sum, item) => sum + (Number(item) || 0), 0).toLocaleString('fr-FR')}
                     </td>
-                ))}
-                
-                {/* estimationComment is not in the columns config for now, handled separately */}
-                {/* This part needs to be refactored if estimationComment is to be made dynamic */}
-                
-                {row.contributions.map((contribution, personIndex) => (
-                  <td key={personIndex} className="px-6 py-4" style={{ minWidth: '120px' }}>
-                    <input
-                      type="number"
-                      min="0"
-                      value={contribution}
-                      onChange={(e) => handleContributionChange(rowIndex, personIndex, e.target.value)}
-                      className="w-24 text-center bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 disabled:bg-gray-200 disabled:cursor-not-allowed"
-                      aria-label={`Contribution de ${teamMembers[personIndex]} pour ${row.thematique}`}
-                      disabled={!isAdmin && currentUser !== teamMembers[personIndex]}
-                    />
-                  </td>
-                ))}
-                <td className="px-6 py-4 font-bold text-center">
-                  {row.contributions.reduce((sum, item) => sum + item, 0).toLocaleString('fr-FR')}
-                </td>
-                 <td className="px-6 py-4 text-center">
-                    <button onClick={() => handleOpenCommentModal(rowIndex)} className="relative py-1 px-3 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
-                        Gérer
-                        {hasComments && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-sky-500"></span></span>}
-                    </button>
+                     <td className="px-6 py-4 text-center">
+                        <button onClick={() => handleOpenCommentModal(rowIndex)} className="relative py-1 px-3 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                            Gérer
+                            {hasComments && <span className="absolute -top-1 -right-1 flex h-3 w-3"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75"></span><span className="relative inline-flex rounded-full h-3 w-3 bg-sky-500"></span></span>}
+                        </button>
+                    </td>
+                  </tr>
+                );
+              })
+            ) : (
+              <tr>
+                <td colSpan={totalColumnCount} className="text-center p-8 text-gray-500">
+                  {isCustom || title.includes('Remontée') ? "Ce tableau est vide. Vous pouvez ajouter une ligne." : "Aucun résultat pour ce filtre."}
                 </td>
               </tr>
-            );
-          })
-        ) : (
-          <tr>
-            <td colSpan={10 + teamMembers.length} className="text-center p-8 text-gray-500">
-              {isCustom ? "Ce tableau est vide. L'administrateur peut ajouter une ligne." : "Aucun résultat pour ce filtre."}
-            </td>
-          </tr>
-        )}
-      </tbody>
-    </table>
-  );
+            )}
+          </tbody>
+        </table>
+    );
+  };
+
 
   const selectedRowForComment = selectedRowIndex !== null ? data[selectedRowIndex] : null;
 
@@ -445,10 +645,34 @@ const TablePage: React.FC<TablePageProps> = ({
             </div>
         </div>
       )}
+      {/* Thematique Comment Modal */}
+      {isThematiqueCommentModalOpen && selectedRowForComment && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4">
+                <div className="p-6 border-b">
+                    <h2 className="text-xl font-bold text-gray-800">Commentaire Administrateur</h2>
+                    <p className="text-md text-gray-600 mt-1">sur : {selectedRowForComment.thematique}</p>
+                </div>
+                <div className="p-6">
+                    <textarea
+                        rows={5}
+                        className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2"
+                        value={thematiqueCommentInput}
+                        onChange={(e) => setThematiqueCommentInput(e.target.value)}
+                        placeholder="Saisissez un commentaire pour cette thématique..."
+                    />
+                </div>
+                <div className="flex justify-end p-4 bg-gray-50 rounded-b-lg space-x-3">
+                    <button onClick={handleCloseThematiqueCommentModal} className="py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Annuler</button>
+                    <button onClick={handleSaveThematiqueComment} className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">Enregistrer</button>
+                </div>
+            </div>
+        </div>
+      )}
       {/* Column Editor Modal */}
        {isColumnEditorOpen && (
             <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                <div className="bg-white rounded-lg shadow-xl w-full max-w-3xl mx-4">
+                <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl mx-4">
                     <div className="p-6 border-b">
                         <h2 className="text-xl font-bold text-gray-800">Éditeur de Colonnes</h2>
                     </div>
@@ -458,11 +682,25 @@ const TablePage: React.FC<TablePageProps> = ({
                                <div className="col-span-1">
                                     <input type="checkbox" checked={col.visible} onChange={e => handleColumnChange(index, 'visible', e.target.checked)} className="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
                                </div>
-                               <div className="col-span-10">
+                               <div className="col-span-9">
                                     <input type="text" value={col.header} onChange={e => handleColumnChange(index, 'header', e.target.value)} className={inputClasses} disabled={!col.editable} />
+                               </div>
+                               <div className="col-span-2 text-right">
+                                  {col.editable && (
+                                      <button onClick={() => removeColumn(index)} className="p-1 text-red-500 hover:text-red-700" title="Supprimer la colonne">
+                                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                          </svg>
+                                      </button>
+                                  )}
                                </div>
                            </div>
                        ))}
+                       <div className="mt-4 pt-4 border-t">
+                            <button onClick={addNewColumn} className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700">
+                                Ajouter une colonne
+                            </button>
+                        </div>
                     </div>
                     <div className="flex justify-end p-4 bg-gray-50 rounded-b-lg space-x-3">
                         <button onClick={() => setIsColumnEditorOpen(false)} className="py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Annuler</button>
@@ -496,29 +734,49 @@ const TablePage: React.FC<TablePageProps> = ({
       </header>
       <main className="bg-white rounded-lg shadow-md overflow-hidden">
         <div className="p-4 border-b bg-gray-50 flex justify-between items-center flex-wrap gap-4">
-            <div>
-                <label htmlFor="difficulty-filter" className="block text-sm font-medium text-gray-700 mb-1">
-                    Filtrer par difficulté
-                </label>
-                <select
-                    id="difficulty-filter"
-                    value={difficultyFilter}
-                    onChange={(e) => setDifficultyFilter(e.target.value)}
-                    className="w-full max-w-xs bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
-                    aria-label="Filtrer par difficulté"
-                >
-                    <option value="all">Toutes</option>
-                    {uniqueDifficulties.map(d => (
-                        <option key={d} value={d}>{d}</option>
-                    ))}
-                </select>
+            <div className="flex items-end flex-wrap gap-4">
+                <div>
+                    <label htmlFor="difficulty-filter" className="block text-sm font-medium text-gray-700 mb-1">
+                        Filtrer par difficulté
+                    </label>
+                    <select
+                        id="difficulty-filter"
+                        value={difficultyFilter}
+                        onChange={(e) => setDifficultyFilter(e.target.value)}
+                        className="w-full max-w-xs bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                        aria-label="Filtrer par difficulté"
+                    >
+                        <option value="all">Toutes</option>
+                        {uniqueDifficulties.map(d => (
+                            <option key={d} value={d}>{d}</option>
+                        ))}
+                    </select>
+                </div>
+                {title === 'Fiches de synthèse' && (
+                    <div>
+                        <label htmlFor="comment-filter" className="block text-sm font-medium text-gray-700 mb-1">
+                            Filtrer par Victoire Rapide / Comité Unité
+                        </label>
+                        <select
+                            id="comment-filter"
+                            value={commentFilter}
+                            onChange={(e) => setCommentFilter(e.target.value)}
+                            className="w-full max-w-xs bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5"
+                            aria-label="Filtrer par Victoire Rapide / Comité Unité"
+                        >
+                            {Object.entries(commentFilterOptions).map(([value, label]) => (
+                                <option key={value} value={value}>{label}</option>
+                            ))}
+                        </select>
+                    </div>
+                )}
             </div>
              <div className="flex items-center space-x-2 sm:space-x-4">
                 {isAdmin && isCustom && (
-                    <>
                     <button onClick={() => setIsColumnEditorOpen(true)} className="py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Gérer les colonnes</button>
-                    <button onClick={addRow} className="py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Ajouter une ligne</button>
-                    </>
+                )}
+                {(isAdmin || title.includes('Remontée') || isCustom) && (
+                     <button onClick={addRow} className="py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Ajouter une ligne</button>
                 )}
                 {saveMessage && <span className="text-sm text-green-600 font-medium transition-opacity duration-300">{saveMessage}</span>}
                 <button
@@ -533,7 +791,7 @@ const TablePage: React.FC<TablePageProps> = ({
                 </button>
             </div>
         </div>
-        <div className="overflow-x-auto">
+        <div className="overflow-auto max-h-[75vh]">
           {renderTable()}
         </div>
       </main>
