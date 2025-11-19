@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import LoginPage from './components/LoginPage';
 import TablePage from './components/TablePage';
@@ -5,22 +6,21 @@ import SummaryPage from './components/SummaryPage';
 import HistoryPage from './components/HistoryPage';
 import SynthesisPage from './components/SynthesisPage';
 import ConfigurationPage from './components/ConfigurationPage';
-import AdminDiagnosticsPage from './components/AdminDiagnosticsPage'; // Import de la page de diagnostic
+import AdminDiagnosticsPage from './components/AdminDiagnosticsPage';
+import AnnouncementPage from './components/AnnouncementPage'; // Import de la page d'annonce
 import { loginCodes, defaultColumns } from './config';
 import { INITIAL_DATA as page1Data } from './data';
 import { INITIAL_DATA_GEH_AA as page2Data } from './data-geh-aa';
 import { INITIAL_DATA_GEH_AG_PAGE as page3Data } from './data-geh-ag-page';
 import { INITIAL_DATA_GMH as page4Data } from './data-gmh';
-import { type PageConfig, type LoginEntry, type Column, type RowData } from './types';
+import { type PageConfig, type LoginEntry, type Column, type RowData, type AnnouncementConfig } from './types';
 import { db } from './firebase-config';
 import { doc, setDoc, getDoc, collection, writeBatch, query, where, getDocs } from 'firebase/firestore';
-
-// FIX: Removed defaultColumns constant. It is now centralized in config.ts.
 
 const initialPages: PageConfig[] = [
   {
     id: "page1",
-    title: "Fiches de synthèse",
+    title: "Fiches transverses",
     subtitle: "Issue des fiches de synthèses disponible dans teams",
     initialData: page1Data,
     storageKey: "contributionTableData_p1",
@@ -143,8 +143,6 @@ const performPageDeletion = async (pages: PageConfig[], pageId: string) => {
 
     try {
         const historyCollectionRef = collection(db, 'history');
-        // FIX: Remplacement de la requête 'where' par un filtre côté client
-        // pour éviter les erreurs liées à un index Firestore manquant.
         const historySnapshot = await getDocs(historyCollectionRef);
         const historyDocsToDelete = historySnapshot.docs.filter(doc => doc.data().pageKey === historyKey);
 
@@ -181,10 +179,12 @@ const performPageDeletion = async (pages: PageConfig[], pageId: string) => {
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<string | null>(null);
-  const [currentView, setCurrentView] = useState<'login' | 'summary' | 'table' | 'history' | 'synthesis' | 'configuration' | 'adminDiagnostics'>('login');
+  // Ajout de l'état 'announcement' pour gérer la vue du message
+  const [currentView, setCurrentView] = useState<'login' | 'announcement' | 'summary' | 'table' | 'history' | 'synthesis' | 'configuration' | 'adminDiagnostics'>('login');
   const [pageIndex, setPageIndex] = useState(0);
   const [pages, setPages] = useState<PageConfig[]>([]);
   const [loadingPages, setLoadingPages] = useState(true);
+  const [currentAnnouncement, setCurrentAnnouncement] = useState<string>('');
 
   useEffect(() => {
     const fetchPagesConfig = async () => {
@@ -193,35 +193,41 @@ const App: React.FC = () => {
             const docSnap = await getDoc(docRef);
             if (docSnap.exists() && docSnap.data().pageList) {
                 let firestorePages: PageConfig[] = docSnap.data().pageList;
+                let configChanged = false;
 
-                // --- MIGRATION: Supprimer les tableaux personnalisés "Ressources Humaines" et "Direction Communication" ---
+                const newTitle = "Fiches transverses";
+                
+                const indexOld1 = firestorePages.findIndex(p => p.title === "Fiches de synthèse");
+                if (indexOld1 !== -1) {
+                    firestorePages[indexOld1] = { ...firestorePages[indexOld1], title: newTitle };
+                    configChanged = true;
+                }
+
+                const indexOld2 = firestorePages.findIndex(p => p.title === "Les leviers au budget 26");
+                if (indexOld2 !== -1) {
+                    firestorePages[indexOld2] = { ...firestorePages[indexOld2], title: newTitle };
+                    configChanged = true;
+                }
+
                 const titlesToDelete = ["Remontée Ressources Humaines", "Remontée Direction Communication"];
                 const pagesToDelete = firestorePages.filter(p => titlesToDelete.includes(p.title));
 
                 if (pagesToDelete.length > 0) {
-                    console.log(`MIGRATION : ${pagesToDelete.length} tableau(x) à supprimer...`);
                     let currentPagesList = [...firestorePages];
-                    
                     for (const page of pagesToDelete) {
-                        console.log(`Tentative de suppression du tableau : "${page.title}" (ID: ${page.id})`);
                         const result = await performPageDeletion(currentPagesList, page.id);
                         if (result.success) {
-                            console.log(`- Tableau "${page.title}" supprimé avec succès.`);
-                            currentPagesList = result.updatedPages; // Mettre à jour la liste pour la prochaine itération
-                        } else {
-                            console.error(`- Échec de la suppression du tableau "${page.title}".`);
+                            currentPagesList = result.updatedPages;
                         }
                     }
-                    firestorePages = currentPagesList; // Mettre à jour la variable principale avec le résultat final
-                    console.log("MIGRATION : Fin du processus de suppression.");
+                    firestorePages = currentPagesList;
+                    configChanged = true;
                 }
-                // --- FIN MIGRATION ---
 
                 const firestorePageIds = new Set(firestorePages.map(p => p.id));
                 const missingPages = initialPages.filter(p => !firestorePageIds.has(p.id));
 
-                if (missingPages.length > 0) {
-                    console.log("Mise à jour de la configuration : ajout des pages par défaut manquantes.");
+                if (missingPages.length > 0 || configChanged) {
                     const updatedPages = [...firestorePages, ...missingPages];
                     await setDoc(docRef, { pageList: updatedPages });
                     setPages(updatedPages);
@@ -229,13 +235,12 @@ const App: React.FC = () => {
                     setPages(firestorePages);
                 }
             } else {
-                console.log("Configuration des pages non trouvée, initialisation par défaut.");
                 await setDoc(docRef, { pageList: initialPages });
                 setPages(initialPages);
             }
         } catch (error) {
             console.error("Erreur de chargement de la configuration des pages", error);
-            setPages(initialPages); // Fallback to initial pages on error
+            setPages(initialPages);
         } finally {
             setLoadingPages(false);
         }
@@ -257,6 +262,34 @@ const App: React.FC = () => {
       } catch (error) {
         console.error("Erreur lors de l'enregistrement de la connexion", error);
       }
+
+      // Check for announcements
+      try {
+          const announcementRef = doc(db, 'appConfig', 'announcements');
+          const announcementSnap = await getDoc(announcementRef);
+          
+          if (announcementSnap.exists()) {
+              const config = announcementSnap.data() as AnnouncementConfig;
+              if (config.isActive) {
+                  let messageToShow = '';
+                  if (config.globalMessage) {
+                      messageToShow += config.globalMessage + '\n\n';
+                  }
+                  if (config.userMessages && config.userMessages[user]) {
+                      messageToShow += config.userMessages[user];
+                  }
+                  
+                  if (messageToShow.trim()) {
+                      setCurrentAnnouncement(messageToShow.trim());
+                      setCurrentView('announcement');
+                      return true;
+                  }
+              }
+          }
+      } catch (error) {
+          console.error("Erreur vérification annonces", error);
+      }
+
       setCurrentView('summary');
       return true;
     }
@@ -266,6 +299,10 @@ const App: React.FC = () => {
   const handleLogout = () => {
     setCurrentUser(null);
     setCurrentView('login');
+  };
+
+  const handleAnnouncementAcknowledged = () => {
+      setCurrentView('summary');
   };
 
   const handleSelectPage = (index: number) => {
@@ -310,10 +347,7 @@ const App: React.FC = () => {
   
   const handleUpdatePageConfig = async (pageId: string, newColumns: Column[]) => {
     const pageIndexToUpdate = pages.findIndex(p => p.id === pageId);
-    if (pageIndexToUpdate === -1) {
-        console.error("Page à mettre à jour non trouvée", { pageId });
-        return;
-    }
+    if (pageIndexToUpdate === -1) return;
 
     setLoadingPages(true);
     const updatedPages = [...pages];
@@ -329,9 +363,28 @@ const App: React.FC = () => {
     } catch (error) {
         console.error("Erreur lors de la mise à jour de la configuration de la page", error);
         alert("Erreur lors de la sauvegarde de la configuration des colonnes.");
-        // Optionally revert state change by refetching
     } finally {
         setLoadingPages(false);
+    }
+  };
+
+  const handleTogglePageStatus = async (pageId: string, isFinished: boolean) => {
+    const pageIndexToUpdate = pages.findIndex(p => p.id === pageId);
+    if (pageIndexToUpdate === -1) return;
+
+    const updatedPages = [...pages];
+    updatedPages[pageIndexToUpdate] = {
+        ...updatedPages[pageIndexToUpdate],
+        isFinished: isFinished,
+    };
+    setPages(updatedPages);
+
+    try {
+        const docRef = doc(db, 'appConfig', 'pages');
+        await setDoc(docRef, { pageList: updatedPages });
+    } catch (error) {
+        console.error("Erreur lors de la mise à jour du statut du tableau", error);
+        // Revert on error if needed, but simpler to just log for now in this context
     }
   };
 
@@ -342,6 +395,10 @@ const App: React.FC = () => {
 
     if (loadingPages) {
       return <div className="flex items-center justify-center min-h-screen">Chargement de la configuration...</div>;
+    }
+
+    if (currentView === 'announcement') {
+        return <AnnouncementPage message={currentAnnouncement} onAcknowledge={handleAnnouncementAcknowledged} />;
     }
     
     if (currentView === 'summary') {
@@ -370,6 +427,7 @@ const App: React.FC = () => {
           onBackToSummary={handleBackToSummary}
           pageConfig={currentPageConfig}
           onUpdatePageConfig={handleUpdatePageConfig}
+          onToggleStatus={(status) => handleTogglePageStatus(currentPageConfig.id, status)}
         />
       );
     }
@@ -394,7 +452,7 @@ const App: React.FC = () => {
   }
   
   return (
-    <div className="p-4 sm:p-6 lg:p-8">
+    <div className={currentView === 'login' || currentView === 'announcement' ? '' : "p-4 sm:p-6 lg:p-8"}>
       {renderContent()}
     </div>
   );

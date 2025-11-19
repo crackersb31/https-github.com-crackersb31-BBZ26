@@ -27,8 +27,11 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
     thematique: '',
     origine: 'all',
     difficulte: 'all',
+    nature: 'all',
     contribution: null as number | null,
   });
+  
+  const [hideEmptyRows, setHideEmptyRows] = useState(false);
   
   const [activePopover, setActivePopover] = useState<string | null>(null);
   const [popoverInput, setPopoverInput] = useState('');
@@ -87,6 +90,7 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
 
   const uniqueOrigines = useMemo(() => ['all', ...Array.from(new Set(aggregatedData.map(r => r.origine).filter(Boolean))).sort()], [aggregatedData]);
   const uniqueDifficultes = useMemo(() => ['all', ...Array.from(new Set(aggregatedData.map(r => r.difficulte).filter(Boolean))).sort()], [aggregatedData]);
+  const uniqueNatures = useMemo(() => ['all', ...Array.from(new Set(aggregatedData.map(r => r.nature).filter(Boolean))).sort()], [aggregatedData]);
 
   const sortedAndFilteredData = useMemo(() => {
     let data = [...aggregatedData];
@@ -95,8 +99,16 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
         const thematiqueMatch = filters.thematique ? (row.thematique.toLowerCase().includes(filters.thematique.toLowerCase()) || row.synthese.toLowerCase().includes(filters.thematique.toLowerCase())) : true;
         const origineMatch = filters.origine === 'all' ? true : row.origine === filters.origine;
         const difficulteMatch = filters.difficulte === 'all' ? true : row.difficulte === filters.difficulte;
+        const natureMatch = filters.nature === 'all' ? true : row.nature === filters.nature;
         const contributionMatch = filters.contribution !== null ? (row.contributions[filters.contribution] || 0) > 0 : true;
-        return thematiqueMatch && origineMatch && difficulteMatch && contributionMatch;
+        
+        let hideEmptyMatch = true;
+        if (hideEmptyRows) {
+            const total = row.contributions.reduce((sum, c) => sum + (Number(c) || 0), 0);
+            if (total === 0) hideEmptyMatch = false;
+        }
+
+        return thematiqueMatch && origineMatch && difficulteMatch && natureMatch && contributionMatch && hideEmptyMatch;
     });
     
     if (sortConfig) {
@@ -119,15 +131,16 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
       });
     }
     return data;
-  }, [aggregatedData, sortConfig, filters]);
+  }, [aggregatedData, sortConfig, filters, hideEmptyRows]);
   
   const resetAllFilters = () => {
-    setFilters({ thematique: '', origine: 'all', difficulte: 'all', contribution: null });
+    setFilters({ thematique: '', origine: 'all', difficulte: 'all', nature: 'all', contribution: null });
+    setHideEmptyRows(false);
   };
   
   useEffect(() => {
     setCurrentPage(1);
-  }, [filters]);
+  }, [filters, hideEmptyRows]);
 
   const totalPages = Math.ceil(sortedAndFilteredData.length / ITEMS_PER_PAGE);
   const currentItems = sortedAndFilteredData.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
@@ -145,7 +158,59 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
     return sortConfig.direction === 'ascending' ? ' ▲' : ' ▼';
   };
 
-  const activeFiltersCount = Object.values(filters).filter(v => v !== '' && v !== 'all' && v !== null).length;
+  const activeFiltersCount = Object.values(filters).filter(v => v !== '' && v !== 'all' && v !== null).length + (hideEmptyRows ? 1 : 0);
+  
+  // Fonction d'export CSV
+  const handleExportCSV = () => {
+      // 1. Filtrer les données pour ne garder que celles avec un Total > 0
+      // On se base sur les données déjà filtrées par l'utilisateur (recherche, etc.)
+      const dataToExport = sortedAndFilteredData.filter(row => {
+         const total = row.contributions.reduce((a, b) => a + (Number(b)||0), 0);
+         return total > 0;
+      });
+
+      if (dataToExport.length === 0) {
+        alert("Aucune ligne non vide (Total > 0) à exporter avec les filtres actuels.");
+        return;
+      }
+
+      // 2. Définir les en-têtes (uniquement les colonnes visibles)
+      const headers = [
+        "Thématique", "Synthèse", "Origine", "Difficulté", "Nature", "Estimation",
+        ...teamMembers.map(m => `Contrib. ${m}`),
+        "Total"
+      ];
+
+      // 3. Construire le contenu CSV avec séparateur point-virgule
+      const csvContent = [
+        headers.join(";"),
+        ...dataToExport.map(row => {
+          const total = row.contributions.reduce((a, b) => a + (Number(b)||0), 0);
+          const fields = [
+            row.thematique,
+            row.synthese,
+            row.origine,
+            row.difficulte,
+            row.nature,
+            row.estimation,
+            ...teamMembers.map((_, i) => row.contributions[i] || 0),
+            total
+          ];
+          // Échapper les guillemets et envelopper les champs textuels
+          return fields.map(f => `"${String(f || '').replace(/"/g, '""')}"`).join(";");
+        })
+      ].join("\n");
+
+      // 4. Déclencher le téléchargement avec BOM pour UTF-8 (support Excel)
+      const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `Synthese_Globale_${new Date().toISOString().slice(0,10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+  };
 
   const renderFilterPopover = () => {
     if (!activePopover) return null;
@@ -192,6 +257,13 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
             </ul>
         );
         break;
+      case 'nature':
+        content = (
+            <ul className="max-h-60 overflow-y-auto">
+                {uniqueNatures.map(n => <li key={n}><button className="w-full text-left p-1 hover:bg-gray-100" onClick={() => { setFilters(f => ({ ...f, nature: n })); setActivePopover(null); }}>{n === 'all' ? 'Toutes les natures' : n}</button></li>)}
+            </ul>
+        );
+        break;
       default: return null;
     }
     
@@ -208,7 +280,7 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
     );
   };
   
-  const FilterableHeader = ({ title, filterKey }: { title: string, filterKey: 'thematique' | 'origine' | 'difficulte' }) => (
+  const FilterableHeader = ({ title, filterKey }: { title: string, filterKey: 'thematique' | 'origine' | 'difficulte' | 'nature' }) => (
     <th scope="col" className="px-6 py-4 font-semibold whitespace-nowrap relative">
       <button onClick={() => {
           setPopoverInput(filters[filterKey] === 'all' ? '' : filters[filterKey]);
@@ -242,14 +314,32 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
       </header>
 
       <main className="bg-white rounded-lg shadow-md overflow-hidden">
-        {activeFiltersCount > 0 && (
-            <div className="p-3 bg-blue-50 border-b text-blue-800 text-sm flex items-center justify-between">
-                <span>
-                    Filtres actifs ({activeFiltersCount})
-                </span>
-                <button onClick={resetAllFilters} className="font-semibold hover:underline">(Tout réinitialiser)</button>
-            </div>
-        )}
+        <div className="p-4 border-b bg-gray-50 flex justify-between items-center flex-wrap gap-4">
+             <div className="flex items-center gap-4 flex-wrap">
+                <label className="inline-flex items-center cursor-pointer">
+                    <input type="checkbox" checked={hideEmptyRows} onChange={e => setHideEmptyRows(e.target.checked)} className="sr-only peer" />
+                    <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    <span className="ms-3 text-sm font-medium text-gray-900">Masquer les lignes sans contribution (Total = 0)</span>
+                </label>
+
+                <button
+                  onClick={handleExportCSV}
+                  className="flex items-center gap-2 py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500"
+                  title="Exporter les lignes non vides au format Excel (CSV)"
+                >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Exporter CSV
+                </button>
+             </div>
+            {activeFiltersCount > 0 && (
+                 <div className="text-blue-800 text-sm flex items-center">
+                    <span className="mr-2">Filtres actifs ({activeFiltersCount})</span>
+                    <button onClick={resetAllFilters} className="font-semibold hover:underline">(Tout réinitialiser)</button>
+                </div>
+            )}
+        </div>
         
         <div className="overflow-x-auto">
           {loading ? (
@@ -259,12 +349,14 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
           ) : sortedAndFilteredData.length > 0 ? (
             <>
             <table className="w-full text-sm text-left text-gray-700">
-              <thead className="text-xs text-gray-700 uppercase bg-gray-100 border-b sticky top-0">
+              <thead className="text-xs text-gray-700 uppercase bg-gray-100 border-b sticky top-0 z-10">
                 <tr>
                   <FilterableHeader title="Thématique" filterKey="thematique" />
                   <th scope="col" className="px-6 py-4 font-semibold whitespace-nowrap">Synthèse du levier</th>
                   <FilterableHeader title="Origine" filterKey="origine" />
                   <FilterableHeader title="Difficulté" filterKey="difficulte" />
+                  <FilterableHeader title="Nature" filterKey="nature" />
+                  <th scope="col" className="px-6 py-4 font-semibold whitespace-nowrap">Estimation</th>
                   {teamMembers.map((name, index) => (
                     <th key={name} scope="col" className="px-6 py-4 font-semibold text-center whitespace-nowrap">
                       <button onClick={() => setFilters(f => ({ ...f, contribution: f.contribution === index ? null : index }))} className={`hover:text-blue-600 w-full ${filters.contribution === index ? 'text-blue-600 font-bold' : ''}`} title={`Filtrer par ${name}`}>
@@ -280,12 +372,14 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
               <tbody>
                 {currentItems.map((row, index) => (
                   <tr key={row.id} className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} border-b hover:bg-blue-50`}>
-                    <td className="px-6 py-4 font-medium text-gray-900">{row.thematique}</td>
+                    <td className="px-6 py-4 font-medium text-gray-900 min-w-[250px]">{row.thematique}</td>
                     <td className="px-6 py-4 text-gray-600 max-w-sm truncate" title={row.synthese}>{row.synthese}</td>
-                    <td className="px-6 py-4">{row.origine}</td>
+                    <td className="px-6 py-4 whitespace-nowrap">{row.origine}</td>
                     <td className="px-6 py-4 whitespace-nowrap">{getDifficultyBadge(row.difficulte)}</td>
-                    {row.contributions.map((contrib, i) => (
-                        <td key={i} className="px-6 py-4 text-center">{(contrib || 0).toLocaleString('fr-FR')}</td>
+                    <td className="px-6 py-4 whitespace-nowrap">{row.nature}</td>
+                    <td className="px-6 py-4 whitespace-nowrap">{row.estimation}</td>
+                    {teamMembers.map((_, i) => (
+                        <td key={i} className="px-6 py-4 text-center">{(row.contributions[i] || 0).toLocaleString('fr-FR')}</td>
                     ))}
                     <td className="px-6 py-4 font-bold text-center">
                       {row.contributions.reduce((sum, item) => sum + (Number(item) || 0), 0).toLocaleString('fr-FR')}

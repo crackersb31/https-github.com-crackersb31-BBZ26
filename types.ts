@@ -1,3 +1,4 @@
+
 export interface RowData {
   id: number;
   thematique: string;
@@ -65,4 +66,11 @@ export interface PageConfig {
   historyKey: string;
   isCustom?: boolean; // Flag for custom tables
   columns?: Column[]; // Configuration for columns in custom tables
+  isFinished?: boolean; // Status to indicate if the data entry is considered complete by the owner
+}
+
+export interface AnnouncementConfig {
+    isActive: boolean;
+    globalMessage: string;
+    userMessages: Record<string, string>; // Key: Username (e.g., 'DCOM'), Value: Message
 }

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { type RowData, type HistoryEntry, type PageConfig, type Column } from '../types';
 // FIX: Import defaultColumns from config to resolve reference errors.
@@ -12,6 +13,7 @@ interface TablePageProps {
   onBackToSummary: () => void;
   pageConfig: PageConfig;
   onUpdatePageConfig: (pageId: string, newColumns: Column[]) => Promise<void>;
+  onToggleStatus: (status: boolean) => void;
 }
 
 const commentFilterOptions = {
@@ -27,8 +29,9 @@ const TablePage: React.FC<TablePageProps> = ({
   onBackToSummary,
   pageConfig,
   onUpdatePageConfig,
+  onToggleStatus
 }) => {
-  const { title, subtitle, initialData, storageKey, historyKey, isCustom, columns, id: pageId } = pageConfig;
+  const { title, subtitle, initialData, storageKey, historyKey, isCustom, columns, id: pageId, isFinished } = pageConfig;
 
   const [data, setData] = useState<RowData[]>([]);
   const [initialDataSnapshot, setInitialDataSnapshot] = useState<RowData[]>([]);
@@ -50,6 +53,11 @@ const TablePage: React.FC<TablePageProps> = ({
   const [isColumnEditorOpen, setIsColumnEditorOpen] = useState(false);
   const [currentColumns, setCurrentColumns] = useState<Column[]>([]);
   
+  const isAdmin = currentUser === 'ADMIN';
+
+  // Determine if the current user is the owner of this table
+  const isOwner = title.toUpperCase().includes(currentUser) || (currentUser === 'ADMIN');
+
   useEffect(() => {
     setCurrentColumns(columns || []);
   }, [columns]);
@@ -125,7 +133,7 @@ const TablePage: React.FC<TablePageProps> = ({
     const timestamp = new Date().toISOString();
     
     let columnsMetadata = isCustom ? currentColumns : defaultColumns;
-    if (title.includes('Remontée') || title === 'Fiches de synthèse') {
+    if (title.includes('Remontée') || title === 'Fiches transverses') {
         columnsMetadata = columnsMetadata.filter(col => col.key !== 'estimationComment');
     }
     const columnsToCompare = columnsMetadata.map(c => c.key as keyof RowData);
@@ -377,8 +385,6 @@ const TablePage: React.FC<TablePageProps> = ({
     }
   };
 
-  const isAdmin = currentUser === 'ADMIN';
-
   const uniqueDifficulties = useMemo(() => 
     [...new Set(data.map((row) => row.difficulte).filter(Boolean))].sort(),
     [data]
@@ -389,7 +395,7 @@ const TablePage: React.FC<TablePageProps> = ({
       const difficultyMatch = difficultyFilter === 'all' || row.difficulte === difficultyFilter;
 
       let commentMatch = true;
-      if (title === 'Fiches de synthèse' && commentFilter !== 'all') {
+      if (title === 'Fiches transverses' && commentFilter !== 'all') {
         const adminComment = row.comments?.['ADMIN'];
         if (!adminComment) {
           commentMatch = false;
@@ -490,12 +496,8 @@ const TablePage: React.FC<TablePageProps> = ({
 
   const renderCell = (row: RowData, rowIndex: number, column: Column) => {
     const value = (row as any)[column.key] || '';
-    // Allow editing if Admin OR if the row was created by a user
-    if (!isAdmin && !row.isUserCreated) {
-      if(column.key === 'difficulte') return getDifficultyBadge(value);
-      return <span>{value}</span>;
-    }
-
+    
+    // Exception pour la colonne difficulté : tout le monde peut modifier
     if (column.key === 'difficulte') {
       return (
         <select
@@ -503,12 +505,17 @@ const TablePage: React.FC<TablePageProps> = ({
           onChange={(e) => handleCellChange(rowIndex, column.key, e.target.value)}
           className={inputClasses}
         >
-          <option value="">Sélectionner une difficulté...</option>
+          <option value="">Sélectionner...</option>
           {difficultyOptions.map(option => (
             <option key={option} value={option}>{option}</option>
           ))}
         </select>
       );
+    }
+
+    // Pour les autres colonnes : Allow editing if Admin OR if the row was created by a user
+    if (!isAdmin && !row.isUserCreated) {
+      return <span>{value}</span>;
     }
 
     switch (column.type) {
@@ -520,11 +527,20 @@ const TablePage: React.FC<TablePageProps> = ({
             return <input type="text" value={value} onChange={(e) => handleCellChange(rowIndex, column.key, e.target.value)} className={inputClasses} />;
     }
   };
+  
+  // Helper function to enforce widths for predictable sticky behavior
+  const getColumnWidth = (key: string, type: string): number => {
+      if (key === 'thematique') return 350;
+      if (key === 'synthese' || type === 'textarea') return 300;
+      if (key === 'nature' || key === 'estimation') return 180;
+      if (key === 'difficulte') return 140;
+      return 150; // Default width for other columns
+  };
 
   const renderTable = () => {
     let baseColumns = isCustom ? currentColumns : defaultColumns;
     // Supprimer la colonne "Commentaire Estimation" pour les remontées ET pour la fiche de synthèse
-    if (title.includes('Remontée') || title === 'Fiches de synthèse') {
+    if (title.includes('Remontée') || title === 'Fiches transverses') {
         baseColumns = baseColumns.filter(col => col.key !== 'estimationComment');
     }
     const visibleColumns = baseColumns.filter(c => c.visible);
@@ -532,14 +548,39 @@ const TablePage: React.FC<TablePageProps> = ({
     const isRemonteeCommunication = title.trim().toLowerCase() === 'remontée communication';
     const totalColumnCount = visibleColumns.length + (isRemonteeCommunication ? teamMembers.length - 1 : teamMembers.length) + 2;
 
+    // Calculate cumulative left positions for sticky columns
+    // We freeze up to the first 6 visible columns
+    const stickyLimit = 6; 
+    let accumulatedLeft = 0;
 
     return (
         <table className="w-full text-sm text-left text-gray-700">
-          <thead className="text-xs text-gray-700 uppercase bg-gray-100 border-b sticky top-0 z-20 shadow-sm">
+          <thead className="text-xs text-gray-700 uppercase bg-gray-100 border-b sticky top-0 z-30 shadow-sm">
             <tr>
-              {visibleColumns.map(col => (
-                 <th key={col.key as string} scope="col" className="px-6 py-4 font-semibold whitespace-nowrap">{col.header}</th>
-              ))}
+              {visibleColumns.map((col, index) => {
+                 const width = getColumnWidth(col.key, col.type);
+                 const isSticky = index < stickyLimit;
+                 const style: React.CSSProperties = {
+                     minWidth: `${width}px`,
+                     ...(isSticky ? {
+                         position: 'sticky',
+                         left: `${accumulatedLeft}px`,
+                         zIndex: 30, // Higher than body cells (10) and normal headers (20)
+                         backgroundColor: '#f3f4f6', // bg-gray-100 to match header
+                         boxShadow: index === stickyLimit - 1 ? '4px 0 4px -2px rgba(0, 0, 0, 0.1)' : 'none'
+                     } : {})
+                 };
+                 
+                 if (isSticky) {
+                     accumulatedLeft += width;
+                 }
+
+                 return (
+                    <th key={col.key as string} scope="col" className="px-6 py-4 font-semibold whitespace-nowrap" style={style}>
+                        {col.header}
+                    </th>
+                 );
+              })}
               {teamMembers.map((name) => {
                 if (isRemonteeCommunication && name === 'DCOM') return null;
                 return <th key={name} scope="col" className="px-6 py-4 font-semibold text-center whitespace-nowrap">{`Contrib. ${name}`}</th>
@@ -553,13 +594,38 @@ const TablePage: React.FC<TablePageProps> = ({
               filteredData.map((row, index) => {
                 const rowIndex = data.findIndex(originalRow => originalRow.id === row.id);
                 const hasComments = row.comments && Object.keys(row.comments).length > 0;
+                const isEven = index % 2 === 0;
+                const rowBgClass = isEven ? 'bg-white' : 'bg-gray-50';
+                
+                // Reset accumulated left for body cells
+                let currentBodyLeft = 0;
+
                 return (
-                  <tr key={row.id} className={`${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'} border-b hover:bg-blue-50`}>
-                    {visibleColumns.map(col => (
-                        <td key={col.key as string} className="px-6 py-4" style={{ minWidth: (col.key === 'thematique') ? '350px' : (col.type === 'textarea' || (title.includes('Remontée') && col.key === 'nature')) ? '300px' : 'auto' }}>
-                             {col.key === 'thematique' ? renderThematiqueCell(row, rowIndex) : renderCell(row, rowIndex, col)}
-                        </td>
-                    ))}
+                  <tr key={row.id} className={`${rowBgClass} border-b hover:bg-blue-50`}>
+                    {visibleColumns.map((col, colIndex) => {
+                         const width = getColumnWidth(col.key, col.type);
+                         const isSticky = colIndex < stickyLimit;
+                         const style: React.CSSProperties = {
+                             minWidth: `${width}px`,
+                             ...(isSticky ? {
+                                 position: 'sticky',
+                                 left: `${currentBodyLeft}px`,
+                                 zIndex: 10, // Stays above scrolling content but below header
+                                 backgroundColor: isEven ? '#ffffff' : '#f9fafb', // Explicit color required for sticky opacity
+                                 boxShadow: colIndex === stickyLimit - 1 ? '4px 0 4px -2px rgba(0, 0, 0, 0.05)' : 'none'
+                             } : {})
+                         };
+                         
+                         if (isSticky) {
+                             currentBodyLeft += width;
+                         }
+
+                         return (
+                            <td key={col.key as string} className="px-6 py-4" style={style}>
+                                 {col.key === 'thematique' ? renderThematiqueCell(row, rowIndex) : renderCell(row, rowIndex, col)}
+                            </td>
+                        );
+                    })}
                     
                     {teamMembers.map((name, personIndex) => {
                       if (isRemonteeCommunication && name === 'DCOM') return null;
@@ -752,7 +818,7 @@ const TablePage: React.FC<TablePageProps> = ({
                         ))}
                     </select>
                 </div>
-                {title === 'Fiches de synthèse' && (
+                {title === 'Fiches transverses' && (
                     <div>
                         <label htmlFor="comment-filter" className="block text-sm font-medium text-gray-700 mb-1">
                             Filtrer par Victoire Rapide / Comité Unité
@@ -772,6 +838,28 @@ const TablePage: React.FC<TablePageProps> = ({
                 )}
             </div>
              <div className="flex items-center space-x-2 sm:space-x-4">
+                {/* Bouton de bascule 'Saisie Terminée' pour le propriétaire du tableau */}
+                {isOwner && (
+                  <div className="flex items-center mr-4 bg-white px-3 py-2 rounded-md border border-gray-200 shadow-sm">
+                    <label htmlFor="finished-toggle" className="flex items-center cursor-pointer">
+                      <div className="relative">
+                        <input 
+                          id="finished-toggle" 
+                          type="checkbox" 
+                          className="sr-only" 
+                          checked={isFinished || false} 
+                          onChange={(e) => onToggleStatus(e.target.checked)}
+                        />
+                        <div className={`block w-10 h-6 rounded-full transition-colors ${isFinished ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                        <div className={`dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition-transform ${isFinished ? 'transform translate-x-4' : ''}`}></div>
+                      </div>
+                      <div className="ml-3 text-sm font-medium text-gray-700">
+                        {isFinished ? <span className="text-green-600 font-bold">Saisie terminée</span> : "Saisie en cours"}
+                      </div>
+                    </label>
+                  </div>
+                )}
+
                 {isAdmin && isCustom && (
                     <button onClick={() => setIsColumnEditorOpen(true)} className="py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Gérer les colonnes</button>
                 )}
