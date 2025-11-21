@@ -248,6 +248,8 @@ const SummaryPage: React.FC<SummaryPageProps> = ({ currentUser, pages, onSelectP
   // Filtrer les pages terminées pour le widget
   const finishedPages = pages.filter(p => p.isFinished);
 
+  const toolsStartDelay = (sousUnitePages.length + etatMajorPages.length) * 100;
+
   return (
     <div className="min-h-screen bg-slate-50 relative overflow-x-hidden">
        {/* Arrière-plan animé "Living Light" */}
@@ -406,31 +408,41 @@ const SummaryPage: React.FC<SummaryPageProps> = ({ currentUser, pages, onSelectP
                   delay={(index + sousUnitePages.length) * 100}
                 />;
               })}
-              
-              <ToolCard 
-                title="Configuration & Aide" 
-                onClick={onSelectConfiguration} 
-                Icon={iconComponents['Configuration & Aide']} 
-                theme="slate" 
-                delay={800}
-              />
+            </div>
+          </section>
 
-              {/* Nouvelle carte : Synthèse par Utilisateur (Accessible à tous) */}
-              <ToolCard 
-                title="Synthèse par Utilisateur" 
-                onClick={onSelectUserSynthesis} 
-                Icon={iconComponents['Synthèse par Utilisateur']} 
-                theme="cyan" 
-                delay={850} 
-              />
-              
-              {isAdmin && (
-                <>
-                  <ToolCard title="Synthèse Globale" onClick={onSelectSynthesis} Icon={iconComponents['Synthèse Globale']} theme="purple" delay={900} />
-                  <ToolCard title="Historique Global" onClick={onSelectHistory} Icon={iconComponents['Historique Global']} theme="emerald" delay={1000} />
-                  <ToolCard title="Diagnostic Admin" onClick={onSelectAdminDiagnostics} Icon={iconComponents['Diagnostic Admin']} theme="slate" delay={1100} />
-                </>
-              )}
+          {/* Nouvelle Section 3 : Statistique et Configuration */}
+          <section>
+             <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                    <span className="w-1 h-8 bg-emerald-500 rounded-full"></span>
+                    Statistique et Configuration
+                </h2>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                <ToolCard 
+                    title="Configuration & Aide" 
+                    onClick={onSelectConfiguration} 
+                    Icon={iconComponents['Configuration & Aide']} 
+                    theme="slate" 
+                    delay={toolsStartDelay}
+                />
+
+                <ToolCard 
+                    title="Synthèse par Utilisateur" 
+                    onClick={onSelectUserSynthesis} 
+                    Icon={iconComponents['Synthèse par Utilisateur']} 
+                    theme="cyan" 
+                    delay={toolsStartDelay + 100} 
+                />
+
+                {isAdmin && (
+                    <>
+                    <ToolCard title="Synthèse Globale" onClick={onSelectSynthesis} Icon={iconComponents['Synthèse Globale']} theme="purple" delay={toolsStartDelay + 200} />
+                    <ToolCard title="Historique Global" onClick={onSelectHistory} Icon={iconComponents['Historique Global']} theme="emerald" delay={toolsStartDelay + 300} />
+                    <ToolCard title="Diagnostic Admin" onClick={onSelectAdminDiagnostics} Icon={iconComponents['Diagnostic Admin']} theme="slate" delay={toolsStartDelay + 400} />
+                    </>
+                )}
             </div>
           </section>
       </main>

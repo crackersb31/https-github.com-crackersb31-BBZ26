@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { loginCodes, teamMembers } from '../config';
 import { db } from '../firebase-config';
@@ -25,7 +26,7 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
 
   const tabs = [
     { id: 'structure', label: "Structure de l'application" },
-    { id: 'saisies', label: 'Gestion des saisies' },
+    { id: 'saisies', label: 'Guide utilisateur & Saisies' },
   ];
 
   if (isAdmin) {
@@ -186,37 +187,31 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
           <div className="prose max-w-none">
             <h3 className="text-xl font-semibold text-gray-800">Mission de l'application</h3>
             <p className="text-gray-800">
-              Cette application est conçue pour <strong className="text-gray-900">centraliser et suivre les contributions</strong> des différentes équipes sur des fiches projet. L'objectif est de collaborer efficacement, d'assurer la traçabilité des modifications et de disposer d'une vue d'ensemble consolidée.
+              <strong>Activation des leviers BBZ budget 26</strong> est l'outil central pour piloter les contributions financières. Elle remplace les fichiers Excel dispersés pour offrir une consolidation en temps réel, sécurisée et transparente.
             </p>
-            <h3 className="text-xl font-semibold text-gray-800 mt-6">Navigation et Pages Clés</h3>
-            <p className="text-gray-800">L'application est organisée autour de plusieurs écrans principaux :</p>
+            <h3 className="text-xl font-semibold text-gray-800 mt-6">Organisation du Sommaire</h3>
+            <p className="text-gray-800">L'écran d'accueil est désormais structuré en <strong>3 zones distinctes</strong> pour plus de clarté :</p>
             <dl className="space-y-4">
-                <div>
-                    <dt className="font-semibold text-gray-700">Connexion</dt>
-                    <dd className="pl-4 text-gray-700">Un portail sécurisé où chaque utilisateur s'identifie avec un code unique.</dd>
-                </div>
-                <div>
-                    <dt className="font-semibold text-gray-700">Sommaire</dt>
-                    <dd className="pl-4 text-gray-700">
-                        La page d'accueil qui regroupe l'accès à tous les tableaux et outils. Elle est divisée en deux sections :
-                        <ul className="my-2 text-gray-700">
-                            <li><strong className="text-gray-800">Remontée Sous Unité :</strong> Contient les tableaux <em>GEH AA, GEH AG, GEH TA, GMH</em>.</li>
-                            <li><strong className="text-gray-800">Etat Major Unité :</strong> Regroupe tous les autres tableaux (<em>Fiches transverses, DC, DCAB, DCOM, DF, DRH, DT, SST</em>) et les outils.</li>
-                        </ul>
+                <div className="bg-amber-50 p-3 rounded-lg border border-amber-100">
+                    <dt className="font-bold text-amber-800">1. Remontée Sous Unité</dt>
+                    <dd className="text-amber-900 text-sm mt-1">
+                        Contient les tableaux spécifiques aux entités géographiques et techniques : <em>GEH AA, GEH AG, GEH TA, GMH</em>.
                     </dd>
                 </div>
-                <div>
-                    <dt className="font-semibold text-gray-700">Tableaux de saisie</dt>
-                    <dd className="pl-4 text-gray-700">Les pages de travail où les données sont consultées et modifiées.</dd>
+                <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                    <dt className="font-bold text-blue-800">2. Etat Major Unité</dt>
+                    <dd className="text-blue-900 text-sm mt-1">
+                        Regroupe le tableau central <strong>"Fiches transverses"</strong> ainsi que les remontées des fonctions support (<em>DC, DCOM, DF, DRH, DT, SST...</em>).
+                    </dd>
                 </div>
-                 <div>
-                    <dt className="font-semibold text-gray-700">Outils (visibles sur le Sommaire)</dt>
-                    <dd className="pl-4 text-gray-700">
-                        <ul className="my-2 text-gray-700">
-                            <li><strong className="text-gray-800">Configuration & Aide (Tous) :</strong> La page actuelle.</li>
-                            <li><strong className="text-gray-800">Synthèse Globale (Admin) :</strong> Une vue consolidée qui agrège les données de tous les tableaux.</li>
-                            <li><strong className="text-gray-800">Historique Global (Admin) :</strong> Un journal complet de toutes les modifications.</li>
-                             <li><strong className="text-gray-800">Diagnostic Admin (Admin) :</strong> Page technique pour exporter la configuration de l'application.</li>
+                <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
+                    <dt className="font-bold text-emerald-800">3. Statistique et Configuration</dt>
+                    <dd className="text-emerald-900 text-sm mt-1">
+                        La zone de pilotage et d'analyse :
+                        <ul className="list-disc list-inside mt-2">
+                            <li><strong>Configuration & Aide :</strong> La page actuelle.</li>
+                            <li><strong>Synthèse par Utilisateur :</strong> Pour voir toutes vos contributions sur une seule page.</li>
+                            <li><strong>Outils Admin :</strong> Synthèse Globale, Historique, Diagnostic.</li>
                         </ul>
                     </dd>
                 </div>
@@ -226,28 +221,47 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
       case 'saisies':
         return (
           <div className="prose max-w-none">
-            <h3 className="text-xl font-semibold text-gray-800">Comment modifier les données ?</h3>
-            <p className="text-gray-800">Les permissions de modification dépendent de votre rôle (Utilisateur ou Administrateur).</p>
-            <ol className="text-gray-700">
-                <li><strong className="text-gray-800">Saisir une contribution :</strong> En tant qu'utilisateur, vous pouvez uniquement modifier les chiffres dans la colonne qui porte le nom de votre équipe. L'administrateur peut tout modifier.</li>
-                <li><strong className="text-gray-800">Ajouter un commentaire :</strong> Cliquez sur le bouton <strong>"Gérer"</strong> dans la colonne "Commentaires" pour ajouter ou modifier votre commentaire sur une ligne. Un point bleu signale la présence de commentaires.</li>
-                <li><strong className="text-gray-800">Filtrer les données :</strong> Utilisez le menu déroulant <strong>"Filtrer par difficulté"</strong> en haut de chaque tableau pour n'afficher que les lignes pertinentes.</li>
-            </ol>
+            <h3 className="text-xl font-semibold text-gray-800">Guide de Saisie & Droits</h3>
+            <p className="text-gray-800">L'application garantit que chacun n'agit que sur son périmètre :</p>
+            <ul className="list-disc pl-5 text-gray-700 space-y-2">
+                <li><strong className="text-blue-700">Chiffres :</strong> Vous ne pouvez modifier que la colonne de votre équipe (ex: "Contrib. DCOM"). Les autres sont verrouillées.</li>
+                <li><strong className="text-blue-700">Difficulté :</strong> La colonne "Difficulté" est désormais modifiable par tous pour ajuster l'évaluation.</li>
+                <li><strong className="text-blue-700">Commentaires :</strong> Le bouton "Gérer" permet d'annoter n'importe quelle ligne.</li>
+            </ul>
 
-            <h3 className="text-xl font-semibold text-gray-800 mt-6">Points Clés à Retenir</h3>
-            <div className="space-y-4">
-                <div className="flex items-start">
-                    <span className="text-2xl mr-4">💾</span>
-                    <div className="text-gray-700">
-                        <strong className="text-gray-800">Sauvegarde Manuelle :</strong> Les modifications ne sont pas automatiques. Cliquez toujours sur <strong>"Sauvegarder"</strong> pour enregistrer votre travail. Le bouton devient orange pour vous alerter des changements non sauvegardés.
-                    </div>
+            <h3 className="text-xl font-semibold text-gray-800 mt-8">Nouveautés & Ergonomie</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                <div className="border p-4 rounded-lg bg-gray-50">
+                    <h4 className="font-bold text-gray-800 mb-2">📌 Colonnes Figées</h4>
+                    <p className="text-sm text-gray-600">
+                        Lorsque vous faites défiler le tableau vers la droite pour voir les équipes, les <strong>6 premières colonnes</strong> (Thématique, Origine...) restent fixes à gauche. Vous ne perdez jamais le contexte de la ligne !
+                    </p>
                 </div>
-                <div className="flex items-start">
-                    <span className="text-2xl mr-4">⚠️</span>
-                     <div className="text-gray-700">
-                        <strong className="text-gray-800">Alerte de sortie :</strong> Si vous quittez une page avec des modifications non sauvegardées, le navigateur vous demandera une confirmation. Si vous ignorez l'alerte, vos changements seront perdus.
-                    </div>
+                <div className="border p-4 rounded-lg bg-gray-50">
+                    <h4 className="font-bold text-gray-800 mb-2">✅ Validation "Saisie Terminée"</h4>
+                    <p className="text-sm text-gray-600">
+                        Dans votre tableau de remontée, un interrupteur en haut à droite permet de signaler officiellement que vous avez fini.
+                        <br/>
+                        <span className="text-green-600 font-bold text-xs">Passer au vert pour valider</span>
+                    </p>
                 </div>
+                <div className="border p-4 rounded-lg bg-gray-50">
+                    <h4 className="font-bold text-gray-800 mb-2">📊 Exports Excel (CSV)</h4>
+                    <p className="text-sm text-gray-600">
+                        Un bouton vert <strong>"Exporter CSV"</strong> est disponible sur les pages de Synthèse (Globale et Utilisateur). Il génère un fichier compatible Excel (point-virgule) ne contenant que les lignes pertinentes (Total > 0).
+                    </p>
+                </div>
+                <div className="border p-4 rounded-lg bg-gray-50">
+                    <h4 className="font-bold text-gray-800 mb-2">👁️ Filtres Intelligents</h4>
+                    <p className="text-sm text-gray-600">
+                       Sur les synthèses, l'option <strong>"Masquer les lignes à 0"</strong> permet d'épurer l'affichage instantanément pour se concentrer sur l'essentiel.
+                    </p>
+                </div>
+            </div>
+
+            <div className="mt-8 p-4 bg-orange-50 border-l-4 border-orange-400 text-orange-800">
+                <p className="font-bold">Rappel Sécurité :</p>
+                <p className="text-sm">Le bouton <strong>Sauvegarder</strong> (qui devient orange et pulse) est votre seul ami. Si vous quittez sans cliquer dessus, vos saisies seront perdues.</p>
             </div>
           </div>
         );
