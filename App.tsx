@@ -5,6 +5,7 @@ import TablePage from './components/TablePage';
 import SummaryPage from './components/SummaryPage';
 import HistoryPage from './components/HistoryPage';
 import SynthesisPage from './components/SynthesisPage';
+import UserSynthesisPage from './components/UserSynthesisPage';
 import ConfigurationPage from './components/ConfigurationPage';
 import AdminDiagnosticsPage from './components/AdminDiagnosticsPage';
 import AnnouncementPage from './components/AnnouncementPage'; // Import de la page d'annonce
@@ -180,7 +181,7 @@ const performPageDeletion = async (pages: PageConfig[], pageId: string) => {
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<string | null>(null);
   // Ajout de l'état 'announcement' pour gérer la vue du message
-  const [currentView, setCurrentView] = useState<'login' | 'announcement' | 'summary' | 'table' | 'history' | 'synthesis' | 'configuration' | 'adminDiagnostics'>('login');
+  const [currentView, setCurrentView] = useState<'login' | 'announcement' | 'summary' | 'table' | 'history' | 'synthesis' | 'userSynthesis' | 'configuration' | 'adminDiagnostics'>('login');
   const [pageIndex, setPageIndex] = useState(0);
   const [pages, setPages] = useState<PageConfig[]>([]);
   const [loadingPages, setLoadingPages] = useState(true);
@@ -322,6 +323,10 @@ const App: React.FC = () => {
     setCurrentView('synthesis');
   };
 
+  const handleSelectUserSynthesis = () => {
+    setCurrentView('userSynthesis');
+  };
+
   const handleSelectConfiguration = () => {
     setCurrentView('configuration');
   };
@@ -409,6 +414,7 @@ const App: React.FC = () => {
           onSelectPage={handleSelectPage}
           onSelectHistory={handleSelectHistory}
           onSelectSynthesis={handleSelectSynthesis}
+          onSelectUserSynthesis={handleSelectUserSynthesis}
           onSelectConfiguration={handleSelectConfiguration}
           onSelectAdminDiagnostics={handleSelectAdminDiagnostics}
           onDeletePage={handleDeletePage}
@@ -438,6 +444,10 @@ const App: React.FC = () => {
 
     if (currentView === 'synthesis') {
       return <SynthesisPage onBack={handleBackToSummary} pageConfigs={pages} />;
+    }
+
+    if (currentView === 'userSynthesis') {
+      return <UserSynthesisPage onBack={handleBackToSummary} pageConfigs={pages} currentUser={currentUser} />;
     }
 
     if (currentView === 'configuration') {

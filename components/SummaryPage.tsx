@@ -12,13 +12,14 @@ interface SummaryPageProps {
   onLogout: () => void;
   onSelectHistory: () => void;
   onSelectSynthesis: () => void;
+  onSelectUserSynthesis: () => void; // New Prop
   onSelectConfiguration: () => void;
   onSelectAdminDiagnostics: () => void;
   onDeletePage: (pageId: string) => void;
 }
 
 // --- CONFIGURATION DES THEMES ---
-type ThemeColor = 'blue' | 'amber' | 'emerald' | 'rose' | 'slate' | 'purple' | 'indigo';
+type ThemeColor = 'blue' | 'amber' | 'emerald' | 'rose' | 'slate' | 'purple' | 'indigo' | 'cyan';
 
 interface ThemeStyles {
   bg: string;
@@ -36,6 +37,7 @@ const themes: Record<ThemeColor, ThemeStyles> = {
   slate: { bg: 'hover:bg-slate-50/80', iconBg: 'bg-slate-100', iconColor: 'text-slate-600', ring: 'group-hover:ring-slate-200', shadow: 'hover:shadow-slate-200' },
   purple: { bg: 'hover:bg-purple-50/80', iconBg: 'bg-purple-100', iconColor: 'text-purple-600', ring: 'group-hover:ring-purple-200', shadow: 'hover:shadow-purple-200' },
   indigo: { bg: 'hover:bg-indigo-50/80', iconBg: 'bg-indigo-100', iconColor: 'text-indigo-600', ring: 'group-hover:ring-indigo-200', shadow: 'hover:shadow-indigo-200' },
+  cyan: { bg: 'hover:bg-cyan-50/80', iconBg: 'bg-cyan-100', iconColor: 'text-cyan-600', ring: 'group-hover:ring-cyan-200', shadow: 'hover:shadow-cyan-200' },
 };
 
 // --- COMPOSANTS ICONES (SVG purs, la couleur est gérée par le parent) ---
@@ -52,6 +54,7 @@ const iconComponents: Record<string, React.FC> = {
     DEFAULT: () => <svg viewBox="0 0 24 24" fill="none" className="w-full h-full"><IconPath d="M14 2H6C5.46957 2 4.96086 2.21071 4.58579 2.58579C4.21071 2.96086 4 3.46957 4 4V20C4 20.5304 4.21071 21.0391 4.58579 21.4142C4.96086 21.7893 5.46957 22 6 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V8L14 2Z"/><IconPath d="M14 2V8H20"/></svg>,
     'Configuration & Aide': () => <svg viewBox="0 0 24 24" fill="none" className="w-full h-full"><IconPath d="M12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15Z"/><IconPath d="M19.4 15L21.5 13.4C21.8 13.1 22 12.6 22 12C22 11.4 21.8 10.9 21.5 10.6L19.4 9C19.1 8.7 18.6 8.5 18.1 8.5C17.6 8.5 17.1 8.7 16.8 9.1L15 10.6C14.7 10.9 14.5 11.4 14.5 11.9C14.5 12.4 14.7 12.9 15 13.2L16.8 14.7C17.1 15.1 17.6 15.3 18.1 15.3C18.6 15.3 19.1 15.1 19.4 14.8V15Z"/><IconPath d="M4.6 15L2.5 13.4C2.2 13.1 2 12.6 2 12C2 11.4 2.2 10.9 2.5 10.6L4.6 9C4.9 8.7 5.4 8.5 5.9 8.5C6.4 8.5 6.9 8.7 7.2 9.1L9 10.6C9.3 10.9 9.5 11.4 9.5 11.9C9.5 12.4 9.3 12.9 9 13.2L7.2 14.7C6.9 15.1 6.4 15.3 5.9 15.3C5.4 15.3 4.9 15.1 4.6 14.8V15Z"/><IconPath d="M9.1 7.2L10.6 9C10.9 9.3 11.4 9.5 11.9 9.5C12.4 9.5 12.9 9.3 13.2 9L14.7 7.2C15.1 6.9 15.3 6.4 15.3 5.9C15.3 5.4 15.1 4.9 14.8 4.6L13.4 2.5C13.1 2.2 12.6 2 12 2C11.4 2 10.9 2.2 10.6 2.5L9.1 4.6C8.7 4.9 8.5 5.4 8.5 5.9C8.5 6.4 8.7 6.9 9 7.2V7.2Z"/><IconPath d="M9.1 16.8L10.6 15C10.9 14.7 11.4 14.5 11.9 14.5C12.4 14.5 12.9 14.7 13.2 15L14.7 16.8C15.1 17.1 15.3 17.6 15.3 18.1C15.3 18.6 15.1 19.1 14.8 19.4L13.4 21.5C13.1 21.8 12.6 22 12 22C11.4 22 10.9 21.8 10.6 21.5L9.1 19.4C8.7 19.1 8.5 18.6 8.5 18.1C8.5 17.6 8.7 17.1 9 16.8V16.8Z"/></svg>,
     'Synthèse Globale': () => <svg viewBox="0 0 24 24" fill="none" className="w-full h-full"><IconPath d="M4 6H20"/><IconPath d="M4 12H20"/><IconPath d="M4 18H20"/></svg>,
+    'Synthèse par Utilisateur': () => <svg viewBox="0 0 24 24" fill="none" className="w-full h-full"><IconPath d="M16 7C16 9.20914 14.2091 11 12 11C9.79086 11 8 9.20914 8 7C8 4.79086 9.79086 3 12 3C14.2091 3 16 4.79086 16 7Z"/><IconPath d="M12 14C8.13401 14 5 17.134 5 21H19C19 17.134 15.866 14 12 14Z"/></svg>,
     'Historique Global': () => <svg viewBox="0 0 24 24" fill="none" className="w-full h-full"><IconPath d="M12 8V12L14 14"/><IconPath d="M22 12C22 17.5228 17.5228 22 12 22C6.47715 22 2 17.5228 2 12C2 6.47715 6.47715 2 12 2C17.5228 2 22 6.47715 22 12Z"/></svg>,
     'Diagnostic Admin': () => <svg viewBox="0 0 24 24" fill="none" className="w-full h-full"><IconPath d="M10 20L14 4"/><IconPath d="M17 17L21 13L17 9"/><IconPath d="M7 17L3 13L7 9"/></svg>,
 };
@@ -152,7 +155,7 @@ const StatWidget: React.FC<{ title: string; children: React.ReactNode; icon: Rea
     </div>
 );
 
-const SummaryPage: React.FC<SummaryPageProps> = ({ currentUser, pages, onSelectPage, onLogout, onSelectHistory, onSelectSynthesis, onSelectConfiguration, onSelectAdminDiagnostics, onDeletePage }) => {
+const SummaryPage: React.FC<SummaryPageProps> = ({ currentUser, pages, onSelectPage, onLogout, onSelectHistory, onSelectSynthesis, onSelectUserSynthesis, onSelectConfiguration, onSelectAdminDiagnostics, onDeletePage }) => {
   const [stats, setStats] = useState({
     activeUsers: [] as { user: string; score: number }[],
     totalContributions: [] as { user:string; total: number }[],
@@ -242,6 +245,9 @@ const SummaryPage: React.FC<SummaryPageProps> = ({ currentUser, pages, onSelectP
     return a.title.localeCompare(b.title);
   });
   
+  // Filtrer les pages terminées pour le widget
+  const finishedPages = pages.filter(p => p.isFinished);
+
   return (
     <div className="min-h-screen bg-slate-50 relative overflow-x-hidden">
        {/* Arrière-plan animé "Living Light" */}
@@ -288,7 +294,7 @@ const SummaryPage: React.FC<SummaryPageProps> = ({ currentUser, pages, onSelectP
                   {loading ? (
                       <div className="flex justify-center p-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>
                   ) : (
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                            <StatWidget title="Utilisateurs les plus actifs" color="bg-amber-500 text-amber-600" icon={<svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>}>
                               {stats.activeUsers.length > 0 ? (
                                 <div className="overflow-y-auto max-h-[250px] pr-2 space-y-3 custom-scrollbar">
@@ -326,6 +332,30 @@ const SummaryPage: React.FC<SummaryPageProps> = ({ currentUser, pages, onSelectP
                                   ))}
                                 </div>
                                ) : <p className="text-slate-400 text-center py-4">Aucune contribution chiffrée.</p>}
+                          </StatWidget>
+
+                          {/* Nouveau Widget : Saisies terminées */}
+                          <StatWidget title="Saisies terminées" color="bg-green-500 text-green-600" icon={<svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>}>
+                              {finishedPages.length > 0 ? (
+                                  <div className="overflow-y-auto max-h-[250px] pr-2 space-y-3 custom-scrollbar">
+                                      {finishedPages.map((page) => (
+                                          <div key={page.id} className="flex items-center justify-between p-3 bg-green-50/50 rounded-xl border border-green-100">
+                                              <div className="flex items-center gap-3">
+                                                  <div className="p-1.5 rounded-full bg-green-100 text-green-600">
+                                                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                                                  </div>
+                                                  <span className="font-semibold text-slate-700 text-sm">{page.title}</span>
+                                              </div>
+                                              <span className="text-xs font-bold text-green-700 bg-green-100 px-2 py-1 rounded">Validé</span>
+                                          </div>
+                                      ))}
+                                  </div>
+                              ) : (
+                                  <div className="flex flex-col items-center justify-center h-40 text-slate-400">
+                                      <svg className="w-10 h-10 mb-2 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                      <p className="text-sm">Aucune saisie validée pour l'instant.</p>
+                                  </div>
+                              )}
                           </StatWidget>
                       </div>
                   )}
@@ -383,6 +413,15 @@ const SummaryPage: React.FC<SummaryPageProps> = ({ currentUser, pages, onSelectP
                 Icon={iconComponents['Configuration & Aide']} 
                 theme="slate" 
                 delay={800}
+              />
+
+              {/* Nouvelle carte : Synthèse par Utilisateur (Accessible à tous) */}
+              <ToolCard 
+                title="Synthèse par Utilisateur" 
+                onClick={onSelectUserSynthesis} 
+                Icon={iconComponents['Synthèse par Utilisateur']} 
+                theme="cyan" 
+                delay={850} 
               />
               
               {isAdmin && (
