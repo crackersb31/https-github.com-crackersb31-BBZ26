@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../firebase-config';
 import { doc, getDoc } from 'firebase/firestore';
@@ -71,9 +72,12 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
           if (!row || !row.thematique) return;
           const existingRow = aggregationMap.get(row.thematique);
           if (existingRow) {
-            existingRow.contributions = existingRow.contributions.map((c, i) => c + (row.contributions[i] || 0));
+            existingRow.contributions = existingRow.contributions.map((c, i) => Number(c) + (Number(row.contributions[i]) || 0));
           } else {
-            aggregationMap.set(row.thematique, JSON.parse(JSON.stringify(row)));
+            // Ensure existing contributions are also numbers
+            const newRow = JSON.parse(JSON.stringify(row));
+            newRow.contributions = newRow.contributions.map((c: any) => Number(c) || 0);
+            aggregationMap.set(row.thematique, newRow);
           }
         });
         
@@ -100,7 +104,7 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
         const origineMatch = filters.origine === 'all' ? true : row.origine === filters.origine;
         const difficulteMatch = filters.difficulte === 'all' ? true : row.difficulte === filters.difficulte;
         const natureMatch = filters.nature === 'all' ? true : row.nature === filters.nature;
-        const contributionMatch = filters.contribution !== null ? (row.contributions[filters.contribution] || 0) > 0 : true;
+        const contributionMatch = filters.contribution !== null ? (Number(row.contributions[filters.contribution]) || 0) > 0 : true;
         
         let hideEmptyMatch = true;
         if (hideEmptyRows) {
@@ -119,8 +123,8 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
             bValue = b.contributions.reduce((s, c) => s + (Number(c) || 0), 0);
         } else if (String(sortConfig.key).startsWith('contrib_')) {
             const index = parseInt(String(sortConfig.key).split('_')[1]);
-            aValue = a.contributions[index] || 0;
-            bValue = b.contributions[index] || 0;
+            aValue = Number(a.contributions[index]) || 0;
+            bValue = Number(b.contributions[index]) || 0;
         } else {
             aValue = a[sortConfig.key as keyof RowData] as any;
             bValue = b[sortConfig.key as keyof RowData] as any;
@@ -193,7 +197,7 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
             row.difficulte,
             row.nature,
             row.estimation,
-            ...teamMembers.map((_, i) => row.contributions[i] || 0),
+            ...teamMembers.map((_, i) => Number(row.contributions[i]) || 0),
             total
           ];
           // Échapper les guillemets et envelopper les champs textuels
@@ -379,7 +383,7 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
                     <td className="px-6 py-4 whitespace-nowrap">{row.nature}</td>
                     <td className="px-6 py-4 whitespace-nowrap">{row.estimation}</td>
                     {teamMembers.map((_, i) => (
-                        <td key={i} className="px-6 py-4 text-center">{(row.contributions[i] || 0).toLocaleString('fr-FR')}</td>
+                        <td key={i} className="px-6 py-4 text-center">{(Number(row.contributions[i]) || 0).toLocaleString('fr-FR')}</td>
                     ))}
                     <td className="px-6 py-4 font-bold text-center">
                       {row.contributions.reduce((sum, item) => sum + (Number(item) || 0), 0).toLocaleString('fr-FR')}

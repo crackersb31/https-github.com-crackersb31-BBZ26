@@ -50,9 +50,11 @@ const UserSynthesisPage: React.FC<UserSynthesisPageProps> = ({ onBack, pageConfi
           if (!row || !row.thematique) return;
           const existingRow = aggregationMap.get(row.thematique);
           if (existingRow) {
-            existingRow.contributions = existingRow.contributions.map((c, i) => c + (row.contributions[i] || 0));
+            existingRow.contributions = existingRow.contributions.map((c, i) => Number(c) + (Number(row.contributions[i]) || 0));
           } else {
-            aggregationMap.set(row.thematique, JSON.parse(JSON.stringify(row)));
+            const newRow = JSON.parse(JSON.stringify(row));
+            newRow.contributions = newRow.contributions.map((c: any) => Number(c) || 0);
+            aggregationMap.set(row.thematique, newRow);
           }
         });
         
@@ -73,7 +75,7 @@ const UserSynthesisPage: React.FC<UserSynthesisPageProps> = ({ onBack, pageConfi
     if (userIndex === -1) return [];
 
     return aggregatedData.filter(row => {
-        const contrib = row.contributions[userIndex] || 0;
+        const contrib = Number(row.contributions[userIndex]) || 0;
         // Si on masque les vides, on vérifie si la contrib > 0
         if (hideEmptyRows && contrib === 0) return false;
         return true;
@@ -84,7 +86,7 @@ const UserSynthesisPage: React.FC<UserSynthesisPageProps> = ({ onBack, pageConfi
   const totalAmount = useMemo(() => {
       const userIndex = teamMembers.indexOf(selectedUser);
       if (userIndex === -1) return 0;
-      return filteredData.reduce((sum, row) => sum + (row.contributions[userIndex] || 0), 0);
+      return filteredData.reduce((sum, row) => sum + (Number(row.contributions[userIndex]) || 0), 0);
   }, [filteredData, selectedUser]);
 
   const handleExportCSV = () => {
@@ -111,7 +113,7 @@ const UserSynthesisPage: React.FC<UserSynthesisPageProps> = ({ onBack, pageConfi
             row.difficulte,
             row.nature,
             row.estimation,
-            row.contributions[userIndex] || 0
+            Number(row.contributions[userIndex]) || 0
           ];
           return fields.map(f => `"${String(f || '').replace(/"/g, '""')}"`).join(";");
         })
@@ -223,7 +225,7 @@ const UserSynthesisPage: React.FC<UserSynthesisPageProps> = ({ onBack, pageConfi
               <tbody>
                 {filteredData.map((row, index) => {
                     const userIndex = teamMembers.indexOf(selectedUser);
-                    const contrib = row.contributions[userIndex] || 0;
+                    const contrib = Number(row.contributions[userIndex]) || 0;
                     return (
                       <tr key={index} className="bg-white border-b hover:bg-gray-50">
                         <td className="px-6 py-4 font-medium text-gray-900">{row.thematique}</td>

@@ -9,7 +9,7 @@ export interface RowData {
   nature: string;
   estimation: string;
   estimationComment?: string;
-  contributions: number[];
+  contributions: (number | string)[]; // Changé de number[] à (number | string)[] pour accepter la saisie décimale temporaire
   comments?: Record<string, string>; // user -> comment
   isUserCreated?: boolean; // Flag to indicate if the row was created by a user (editable by everyone)
   [key: string]: any; // Allow for dynamic columns

@@ -138,7 +138,21 @@ const TablePage: React.FC<TablePageProps> = ({
     }
     const columnsToCompare = columnsMetadata.map(c => c.key as keyof RowData);
 
-    data.forEach((currentRow) => {
+    // SANITIZATION: Convert string contributions to numbers before saving
+    // Replace comma with dot and parse float
+    const dataToSave = data.map(row => ({
+        ...row,
+        contributions: row.contributions.map(val => {
+            if (typeof val === 'string') {
+                // Remplacer virgule par point et convertir
+                const num = parseFloat(val.replace(',', '.'));
+                return isNaN(num) ? 0 : num;
+            }
+            return val;
+        })
+    }));
+
+    dataToSave.forEach((currentRow) => {
       const originalRow = initialDataSnapshot.find(r => r.id === currentRow.id);
 
       if (!originalRow) {
@@ -171,7 +185,8 @@ const TablePage: React.FC<TablePageProps> = ({
       
       (currentRow.contributions || []).forEach((newContrib, personIndex) => {
         const oldContrib = originalRow.contributions?.[personIndex] || 0;
-        if (newContrib !== oldContrib) {
+        // Compare as numbers to avoid "10" !== 10 issues
+        if (Number(newContrib) !== Number(oldContrib)) {
           changes.push({ user: currentUser, rowId: currentRow.id, rowThematique: rowThematiqueForHistory, field: `Contribution ${teamMembers[personIndex]}`, oldValue: String(oldContrib), newValue: String(newContrib) });
         }
       });
@@ -181,7 +196,7 @@ const TablePage: React.FC<TablePageProps> = ({
       }
     });
     
-    if (changes.length === 0 && JSON.stringify(data) === JSON.stringify(initialDataSnapshot)) {
+    if (changes.length === 0 && JSON.stringify(dataToSave) === JSON.stringify(initialDataSnapshot)) {
         setSaveMessage('Aucune modification à sauvegarder.');
         setTimeout(() => setSaveMessage(''), 3000);
         return;
@@ -190,7 +205,7 @@ const TablePage: React.FC<TablePageProps> = ({
     try {
       const batch = writeBatch(db);
       const pageDocRef = doc(db, 'pagesData', storageKey);
-      batch.set(pageDocRef, { rows: data });
+      batch.set(pageDocRef, { rows: dataToSave });
       
       if (changes.length > 0) {
         const historyCollectionRef = collection(db, 'history');
@@ -203,7 +218,9 @@ const TablePage: React.FC<TablePageProps> = ({
       
       await batch.commit();
       
-      setInitialDataSnapshot(JSON.parse(JSON.stringify(data)));
+      // Update local state with the sanitized data to match what's in DB
+      setData(dataToSave);
+      setInitialDataSnapshot(JSON.parse(JSON.stringify(dataToSave)));
       setSaveMessage('Données sauvegardées !');
       setTimeout(() => setSaveMessage(''), 3000);
     } catch (error) {
@@ -214,8 +231,17 @@ const TablePage: React.FC<TablePageProps> = ({
   };
 
   const handleContributionChange = (rowIndex: number, personIndex: number, value: string) => {
-    const newContribution = value === '' ? 0 : parseInt(value, 10);
-    if (isNaN(newContribution) || newContribution < 0) return;
+    // On permet la saisie de chaines (ex: "12.") pour pouvoir taper des décimales
+    // La conversion stricte en nombre se fait à la sauvegarde
+    
+    // Remplacement de la virgule par un point pour l'uniformisation
+    let normalizedValue = value.replace(',', '.');
+
+    // Validation basique pour n'accepter que des chiffres et un point
+    if (!/^\d*\.?\d*$/.test(normalizedValue)) {
+        return; // Ignorer si ce n'est pas un format numérique partiel valide
+    }
+
     setData(currentData => {
       const newData = [...currentData];
       const newRow = { ...newData[rowIndex] };
@@ -224,7 +250,7 @@ const TablePage: React.FC<TablePageProps> = ({
       while (newContributions.length <= personIndex) {
           newContributions.push(0);
       }
-      newContributions[personIndex] = newContribution;
+      newContributions[personIndex] = normalizedValue; // Stocke la valeur brute (string ou number)
       newRow.contributions = newContributions;
       newData[rowIndex] = newRow;
       return newData;
@@ -549,8 +575,8 @@ const TablePage: React.FC<TablePageProps> = ({
     const totalColumnCount = visibleColumns.length + (isRemonteeCommunication ? teamMembers.length - 1 : teamMembers.length) + 2;
 
     // Calculate cumulative left positions for sticky columns
-    // We freeze up to the first 6 visible columns
-    const stickyLimit = 6; 
+    // We freeze only the first column (Thématique) to avoid taking up too much space
+    const stickyLimit = 1; 
     let accumulatedLeft = 0;
 
     return (
@@ -633,8 +659,9 @@ const TablePage: React.FC<TablePageProps> = ({
                       <td key={personIndex} className="px-6 py-4" style={{ minWidth: '120px' }}>
                         <input
                           type="number"
+                          step="0.01" // Allow decimals
                           min="0"
-                          value={row.contributions?.[personIndex] || 0}
+                          value={row.contributions?.[personIndex] || ''} // Allow empty string during edits
                           onChange={(e) => handleContributionChange(rowIndex, personIndex, e.target.value)}
                           className="w-24 text-center bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 disabled:bg-gray-200 disabled:cursor-not-allowed"
                           aria-label={`Contribution de ${teamMembers[personIndex]} pour ${row.thematique}`}
