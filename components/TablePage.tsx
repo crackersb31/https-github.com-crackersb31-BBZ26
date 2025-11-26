@@ -22,6 +22,25 @@ const commentFilterOptions = {
     'Sujet versé aux comités unités': 'Sujet versé aux comités unités'
 };
 
+const DOMAIN_TAGS = ['RH', 'COM', 'DC', 'DT', 'DF', 'SST'];
+const DOMAIN_TAG_COLORS: Record<string, string> = {
+    'RH': 'bg-pink-100 text-pink-800 border-pink-200',
+    'COM': 'bg-blue-100 text-blue-800 border-blue-200',
+    'DC': 'bg-emerald-100 text-emerald-800 border-emerald-200',
+    'DT': 'bg-orange-100 text-orange-800 border-orange-200',
+    'DF': 'bg-red-100 text-red-800 border-red-200',
+    'SST': 'bg-yellow-100 text-yellow-800 border-yellow-200',
+};
+
+// Mapping entre le Tag (affiché) et l'Utilisateur (qui peut répondre)
+const TAG_TO_USER_MAP: Record<string, string> = {
+    'RH': 'DRH',
+    'COM': 'DCOM',
+    'DC': 'DC',
+    'DT': 'DT',
+    'DF': 'DF',
+    'SST': 'SST'
+};
 
 const TablePage: React.FC<TablePageProps> = ({
   currentUser,
@@ -50,9 +69,18 @@ const TablePage: React.FC<TablePageProps> = ({
   const [isThematiqueCommentModalOpen, setIsThematiqueCommentModalOpen] = useState(false);
   const [thematiqueCommentInput, setThematiqueCommentInput] = useState('');
 
+  // State for Domain Response Modal
+  const [isDomainResponseModalOpen, setIsDomainResponseModalOpen] = useState(false);
+  const [domainResponseInput, setDomainResponseInput] = useState('');
+
   const [isColumnEditorOpen, setIsColumnEditorOpen] = useState(false);
   const [currentColumns, setCurrentColumns] = useState<Column[]>([]);
   
+  // State for hover tooltip on Synthese column
+  const [hoveredSynthese, setHoveredSynthese] = useState<{ text: string, top: number, left: number } | null>(null);
+  // State for hover tooltip on Thematique column
+  const [hoveredThematique, setHoveredThematique] = useState<{ text: string, top: number, left: number } | null>(null);
+
   const isAdmin = currentUser === 'ADMIN';
 
   // Determine if the current user is the owner of this table
@@ -61,6 +89,34 @@ const TablePage: React.FC<TablePageProps> = ({
   useEffect(() => {
     setCurrentColumns(columns || []);
   }, [columns]);
+
+  // --- MOUCHARD : TRACKING DES VISITES ---
+  useEffect(() => {
+    const trackVisit = async () => {
+        // On ne tracke pas l'admin pour ne pas polluer les stats, ou on peut le tracker si besoin.
+        // Ici, on tracke tout le monde sauf ADMIN pour que la matrice reste pertinente pour les utilisateurs métiers.
+        if (currentUser === 'ADMIN') return;
+
+        try {
+            // ID composite unique par Utilisateur et par Page pour éviter les doublons de lignes
+            // Cela permet de mettre à jour le timestamp de la "Dernière visite"
+            const visitId = `${currentUser}_${pageId}`;
+            const visitRef = doc(db, 'pageVisits', visitId);
+            
+            await setDoc(visitRef, {
+                user: currentUser,
+                pageId: pageId,
+                pageTitle: title,
+                lastVisit: new Date().toISOString()
+            }, { merge: true }); // merge: true permet de mettre à jour sans écraser si on ajoutait d'autres champs
+        } catch (error) {
+            console.error("Erreur tracking visite", error);
+        }
+    };
+
+    trackVisit();
+  }, [currentUser, pageId, title]);
+  // ---------------------------------------
 
   useEffect(() => {
     const fetchData = async () => {
@@ -74,6 +130,10 @@ const TablePage: React.FC<TablePageProps> = ({
             comments: row.comments || {},
             estimationComment: row.estimationComment || '',
             thematiqueComment: row.thematiqueComment || '', // Ensure field exists
+            isLocked: row.isLocked || false, // Ensure lock status exists
+            isCommitteeSelected: row.isCommitteeSelected || false, // Ensure committee status exists
+            domainTag: row.domainTag || null, // Ensure domain tag exists (null if undefined)
+            domainResponse: row.domainResponse || null, // Ensure domain response exists
           }));
           setData(loadedData);
           setInitialDataSnapshot(JSON.parse(JSON.stringify(loadedData)));
@@ -84,6 +144,10 @@ const TablePage: React.FC<TablePageProps> = ({
             comments: row.comments || {},
             estimationComment: row.estimationComment || '',
             thematiqueComment: row.thematiqueComment || '', // Ensure field exists
+            isLocked: false,
+            isCommitteeSelected: false,
+            domainTag: null,
+            domainResponse: null,
           }));
           setData(initialDataTyped);
           setInitialDataSnapshot(JSON.parse(JSON.stringify(initialDataTyped)));
@@ -98,6 +162,10 @@ const TablePage: React.FC<TablePageProps> = ({
             comments: row.comments || {},
             estimationComment: row.estimationComment || '',
             thematiqueComment: row.thematiqueComment || '', // Ensure field exists
+            isLocked: false,
+            isCommitteeSelected: false,
+            domainTag: null,
+            domainResponse: null,
         }));
         setData(initialDataTyped);
         setInitialDataSnapshot(JSON.parse(JSON.stringify(initialDataTyped)));
@@ -140,8 +208,11 @@ const TablePage: React.FC<TablePageProps> = ({
 
     // SANITIZATION: Convert string contributions to numbers before saving
     // Replace comma with dot and parse float
+    // Ensure domainTag is null if undefined
     const dataToSave = data.map(row => ({
         ...row,
+        domainTag: row.domainTag || null,
+        domainResponse: row.domainResponse || null,
         contributions: row.contributions.map(val => {
             if (typeof val === 'string') {
                 // Remplacer virgule par point et convertir
@@ -177,6 +248,54 @@ const TablePage: React.FC<TablePageProps> = ({
           changes.push({ user: currentUser, rowId: currentRow.id, rowThematique: rowThematiqueForHistory, field: columnHeader, oldValue: String(oldValue), newValue: String(newValue) });
         }
       });
+      
+      // Compare locked status
+      if (currentRow.isLocked !== originalRow.isLocked) {
+          changes.push({ 
+              user: currentUser, 
+              rowId: currentRow.id, 
+              rowThematique: rowThematiqueForHistory, 
+              field: 'Verrouillage', 
+              oldValue: originalRow.isLocked ? 'Verrouillé' : 'Déverrouillé', 
+              newValue: currentRow.isLocked ? 'Verrouillé' : 'Déverrouillé' 
+          });
+      }
+
+      // Compare committee status
+      if (currentRow.isCommitteeSelected !== originalRow.isCommitteeSelected) {
+        changes.push({ 
+            user: currentUser, 
+            rowId: currentRow.id, 
+            rowThematique: rowThematiqueForHistory, 
+            field: 'Comité', 
+            oldValue: originalRow.isCommitteeSelected ? 'Sélectionné' : 'Non sélectionné', 
+            newValue: currentRow.isCommitteeSelected ? 'Sélectionné' : 'Non sélectionné' 
+        });
+      }
+      
+      // Compare domain tag
+      if ((currentRow.domainTag || null) !== (originalRow.domainTag || null)) {
+        changes.push({ 
+            user: currentUser, 
+            rowId: currentRow.id, 
+            rowThematique: rowThematiqueForHistory, 
+            field: 'Tag Domaine', 
+            oldValue: originalRow.domainTag || 'Aucun', 
+            newValue: currentRow.domainTag || 'Aucun' 
+        });
+      }
+
+      // Compare domain response
+      if ((currentRow.domainResponse || null) !== (originalRow.domainResponse || null)) {
+        changes.push({ 
+            user: currentUser, 
+            rowId: currentRow.id, 
+            rowThematique: rowThematiqueForHistory, 
+            field: 'Réponse Domaine', 
+            oldValue: originalRow.domainResponse || '', 
+            newValue: currentRow.domainResponse || '' 
+        });
+      }
        
       // Compare thematiqueComment specifically
       if (currentRow.thematiqueComment !== originalRow.thematiqueComment) {
@@ -264,7 +383,48 @@ const TablePage: React.FC<TablePageProps> = ({
       return newData;
     });
   };
+
+  const handleToggleLock = (rowIndex: number) => {
+      if (!isAdmin) return;
+      setData(currentData => {
+          const newData = [...currentData];
+          newData[rowIndex] = { ...newData[rowIndex], isLocked: !newData[rowIndex].isLocked };
+          return newData;
+      });
+  };
+
+  const handleToggleCommittee = (rowIndex: number) => {
+      if (!isAdmin) return;
+      setData(currentData => {
+          const newData = [...currentData];
+          newData[rowIndex] = { ...newData[rowIndex], isCommitteeSelected: !newData[rowIndex].isCommitteeSelected };
+          return newData;
+      });
+  };
   
+  const handleCycleDomainTag = (rowIndex: number) => {
+      if (!isAdmin) return;
+      setData(currentData => {
+          const newData = [...currentData];
+          const currentRow = { ...newData[rowIndex] };
+          
+          let nextIndex = 0;
+          if (currentRow.domainTag) {
+              const currentIndex = DOMAIN_TAGS.indexOf(currentRow.domainTag);
+              if (currentIndex === DOMAIN_TAGS.length - 1) {
+                  // If last item, reset to null (no tag)
+                  currentRow.domainTag = null;
+              } else {
+                  currentRow.domainTag = DOMAIN_TAGS[currentIndex + 1];
+              }
+          } else {
+             currentRow.domainTag = DOMAIN_TAGS[0];
+          }
+          newData[rowIndex] = currentRow;
+          return newData;
+      });
+  };
+
   const handleOpenCommentModal = (rowIndex: number) => {
     setSelectedRowIndex(rowIndex);
     const currentComment = data[rowIndex]?.comments?.[currentUser] || '';
@@ -321,6 +481,33 @@ const TablePage: React.FC<TablePageProps> = ({
     handleCloseThematiqueCommentModal();
   };
 
+  // Gestion de la modale de réponse de domaine
+  const handleOpenDomainResponseModal = (rowIndex: number) => {
+      setSelectedRowIndex(rowIndex);
+      const currentResponse = data[rowIndex]?.domainResponse || '';
+      setDomainResponseInput(currentResponse);
+      setIsDomainResponseModalOpen(true);
+  };
+
+  const handleCloseDomainResponseModal = () => {
+      setIsDomainResponseModalOpen(false);
+      setSelectedRowIndex(null);
+      setDomainResponseInput('');
+  };
+
+  const handleSaveDomainResponse = () => {
+      if (selectedRowIndex === null) return;
+      setData(currentData => {
+          const newData = [...currentData];
+          newData[selectedRowIndex] = { 
+              ...newData[selectedRowIndex], 
+              domainResponse: domainResponseInput.trim() === '' ? null : domainResponseInput 
+          };
+          return newData;
+      });
+      handleCloseDomainResponseModal();
+  };
+
 
   const confirmAction = (message: string, action: () => void) => {
     if (hasUnsavedChanges) {
@@ -361,6 +548,10 @@ const TablePage: React.FC<TablePageProps> = ({
         contributions: Array(teamMembers.length).fill(0),
         comments: {},
         isUserCreated: true, // Marqueur pour permettre l'édition par l'utilisateur
+        isLocked: false,
+        isCommitteeSelected: false,
+        domainTag: null,
+        domainResponse: null,
     };
     (columns || []).forEach(col => {
         if (!Object.prototype.hasOwnProperty.call(newRow, col.key)) {
@@ -456,7 +647,7 @@ const TablePage: React.FC<TablePageProps> = ({
     return <HistoryPage onBack={() => setView('table')} historyKey={historyKey} />;
   }
 
-  const inputClasses = "w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2";
+  const inputClasses = "w-full bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 disabled:bg-gray-200 disabled:cursor-not-allowed disabled:text-gray-500";
   
   const getDifficultyBadge = (difficulty: string) => {
     const baseClasses = "px-3 py-1 text-xs font-semibold rounded-full inline-block whitespace-nowrap";
@@ -479,18 +670,114 @@ const TablePage: React.FC<TablePageProps> = ({
   };
 
   const renderThematiqueCell = (row: RowData, rowIndex: number) => {
+    // Logique pour le badge interactif
+    const targetUser = row.domainTag ? TAG_TO_USER_MAP[row.domainTag] : null;
+    const canReplyToDomain = isAdmin || (targetUser && currentUser === targetUser);
+    
     return (
       <div className="flex items-center gap-2">
-        {isAdmin || row.isUserCreated ? (
-          <input
-            type="text"
-            value={row.thematique}
-            onChange={(e) => handleCellChange(rowIndex, 'thematique', e.target.value)}
-            className={inputClasses}
-          />
-        ) : (
-          <span>{row.thematique}</span>
-        )}
+        {/* Colonne d'outils (Lock & Comité & Tags) */}
+        <div className="flex flex-col gap-1 items-center min-w-[24px]">
+            {/* Bouton de verrouillage Admin */}
+            {isAdmin && (
+                <button
+                    onClick={() => handleToggleLock(rowIndex)}
+                    className={`flex-shrink-0 p-1 rounded hover:bg-gray-200 focus:outline-none ${row.isLocked ? 'text-red-600' : 'text-gray-400 hover:text-gray-600'}`}
+                    title={row.isLocked ? "Ligne verrouillée (Cliquez pour déverrouiller)" : "Ligne ouverte (Cliquez pour verrouiller)"}
+                >
+                    {row.isLocked ? (
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                    ) : (
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" /></svg>
+                    )}
+                </button>
+            )}
+            {!isAdmin && row.isLocked && (
+                <svg className="w-5 h-5 text-red-400 flex-shrink-0" title="Cette ligne est verrouillée par l'administrateur" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+            )}
+
+            {/* Bouton Comité (Admin Toggle / User View) */}
+            {isAdmin ? (
+                <button
+                    onClick={() => handleToggleCommittee(rowIndex)}
+                    className={`flex-shrink-0 p-1 rounded hover:bg-gray-200 focus:outline-none ${row.isCommitteeSelected ? 'text-indigo-600' : 'text-gray-300 hover:text-gray-500'}`}
+                    title={row.isCommitteeSelected ? "Sujet à instruire en comité (Actif)" : "Marquer pour comité"}
+                >
+                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                </button>
+            ) : (
+                row.isCommitteeSelected && (
+                    <svg className="w-5 h-5 text-indigo-600 flex-shrink-0" title="Sujet à instruire en comité" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                    </svg>
+                )
+            )}
+
+            {/* Bouton Tag Domaine (Admin Toggle) */}
+            {isAdmin && (
+                <button
+                    onClick={() => handleCycleDomainTag(rowIndex)}
+                    className={`flex-shrink-0 p-1 rounded hover:bg-gray-200 focus:outline-none ${row.domainTag ? 'text-blue-600' : 'text-gray-300 hover:text-gray-500'}`}
+                    title={row.domainTag ? `Tag actuel : ${row.domainTag}` : "Ajouter un tag de domaine (RH, COM...)"}
+                >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+                    </svg>
+                </button>
+            )}
+        </div>
+
+        <div 
+            className="flex-grow min-w-0 flex flex-col gap-1"
+            onMouseEnter={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                if (row.thematique && row.thematique.trim().length > 0) {
+                    setHoveredThematique({
+                        text: row.thematique,
+                        top: rect.top,
+                        left: rect.right
+                    });
+                }
+            }}
+            onMouseLeave={() => setHoveredThematique(null)}
+        >
+            {isAdmin || (row.isUserCreated && !row.isLocked) ? (
+            <input
+                type="text"
+                value={row.thematique}
+                onChange={(e) => handleCellChange(rowIndex, 'thematique', e.target.value)}
+                className={inputClasses}
+                disabled={!isAdmin && row.isLocked}
+            />
+            ) : (
+            <span className={row.isLocked ? "text-gray-500" : ""}>{row.thematique}</span>
+            )}
+            
+            {/* Affichage du Badge Domaine sous la zone de texte */}
+            {row.domainTag && (
+                <div 
+                    className="flex items-center gap-1 self-start" 
+                    title={row.domainResponse ? `Réponse de ${TAG_TO_USER_MAP[row.domainTag]} : ${row.domainResponse}` : "Pas de réponse pour le moment"}
+                >
+                    <span 
+                        onClick={canReplyToDomain ? () => handleOpenDomainResponseModal(rowIndex) : undefined}
+                        className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium border ${DOMAIN_TAG_COLORS[row.domainTag]} ${canReplyToDomain ? 'cursor-pointer hover:ring-2 hover:ring-offset-1 hover:ring-blue-400 animate-pulse' : ''}`}
+                    >
+                        {row.domainTag}
+                    </span>
+                    
+                    {row.domainResponse && (
+                        <span className="text-gray-500">
+                             <svg className="w-4 h-4 text-blue-500" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
+                             </svg>
+                        </span>
+                    )}
+                </div>
+            )}
+        </div>
   
         {isAdmin ? (
           <button
@@ -522,14 +809,16 @@ const TablePage: React.FC<TablePageProps> = ({
 
   const renderCell = (row: RowData, rowIndex: number, column: Column) => {
     const value = (row as any)[column.key] || '';
+    const isLocked = !isAdmin && row.isLocked;
     
-    // Exception pour la colonne difficulté : tout le monde peut modifier
+    // Exception pour la colonne difficulté : tout le monde peut modifier SAUF si verrouillé
     if (column.key === 'difficulte') {
       return (
         <select
           value={value}
           onChange={(e) => handleCellChange(rowIndex, column.key, e.target.value)}
           className={inputClasses}
+          disabled={isLocked}
         >
           <option value="">Sélectionner...</option>
           {difficultyOptions.map(option => (
@@ -539,18 +828,47 @@ const TablePage: React.FC<TablePageProps> = ({
       );
     }
 
-    // Pour les autres colonnes : Allow editing if Admin OR if the row was created by a user
-    if (!isAdmin && !row.isUserCreated) {
-      return <span>{value}</span>;
+    // Gestion de l'info-bulle (tooltip) pour la colonne Synthèse
+    if (column.key === 'synthese') {
+        return (
+            <div
+                className="relative w-full h-full"
+                onMouseEnter={(e) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    // On ne déclenche que s'il y a du contenu
+                    if (value && typeof value === 'string' && value.trim().length > 0) {
+                        setHoveredSynthese({
+                            text: value,
+                            top: rect.top,
+                            left: rect.right
+                        });
+                    }
+                }}
+                onMouseLeave={() => setHoveredSynthese(null)}
+            >
+                <textarea
+                    value={value}
+                    onChange={(e) => handleCellChange(rowIndex, column.key, e.target.value)}
+                    className={inputClasses}
+                    rows={3}
+                    disabled={isLocked}
+                />
+            </div>
+        );
+    }
+
+    // Pour les autres colonnes : Allow editing if Admin OR if the row was created by a user AND not locked
+    if (!isAdmin && (!row.isUserCreated || row.isLocked)) {
+      return <span className={row.isLocked ? "text-gray-500" : ""}>{value}</span>;
     }
 
     switch (column.type) {
         case 'textarea':
-            return <textarea value={value} onChange={(e) => handleCellChange(rowIndex, column.key, e.target.value)} className={inputClasses} rows={3} />;
+            return <textarea value={value} onChange={(e) => handleCellChange(rowIndex, column.key, e.target.value)} className={inputClasses} rows={3} disabled={isLocked} />;
         case 'badge':
-            return <input type="text" value={value} onChange={(e) => handleCellChange(rowIndex, column.key, e.target.value)} className={inputClasses} />;
+            return <input type="text" value={value} onChange={(e) => handleCellChange(rowIndex, column.key, e.target.value)} className={inputClasses} disabled={isLocked} />;
         default:
-            return <input type="text" value={value} onChange={(e) => handleCellChange(rowIndex, column.key, e.target.value)} className={inputClasses} />;
+            return <input type="text" value={value} onChange={(e) => handleCellChange(rowIndex, column.key, e.target.value)} className={inputClasses} disabled={isLocked} />;
     }
   };
   
@@ -621,7 +939,10 @@ const TablePage: React.FC<TablePageProps> = ({
                 const rowIndex = data.findIndex(originalRow => originalRow.id === row.id);
                 const hasComments = row.comments && Object.keys(row.comments).length > 0;
                 const isEven = index % 2 === 0;
-                const rowBgClass = isEven ? 'bg-white' : 'bg-gray-50';
+                // Si la ligne est verrouillée, on change légèrement la couleur de fond pour l'indiquer
+                const rowBgClass = row.isLocked 
+                    ? 'bg-slate-100' 
+                    : (isEven ? 'bg-white' : 'bg-gray-50');
                 
                 // Reset accumulated left for body cells
                 let currentBodyLeft = 0;
@@ -631,13 +952,16 @@ const TablePage: React.FC<TablePageProps> = ({
                     {visibleColumns.map((col, colIndex) => {
                          const width = getColumnWidth(col.key, col.type);
                          const isSticky = colIndex < stickyLimit;
+                         // Ajustement couleur de fond sticky pour correspondre à la ligne (verrouillée ou non)
+                         const stickyBg = row.isLocked ? '#f1f5f9' : (isEven ? '#ffffff' : '#f9fafb');
+
                          const style: React.CSSProperties = {
                              minWidth: `${width}px`,
                              ...(isSticky ? {
                                  position: 'sticky',
                                  left: `${currentBodyLeft}px`,
                                  zIndex: 10, // Stays above scrolling content but below header
-                                 backgroundColor: isEven ? '#ffffff' : '#f9fafb', // Explicit color required for sticky opacity
+                                 backgroundColor: stickyBg, // Explicit color required for sticky opacity
                                  boxShadow: colIndex === stickyLimit - 1 ? '4px 0 4px -2px rgba(0, 0, 0, 0.05)' : 'none'
                              } : {})
                          };
@@ -655,6 +979,7 @@ const TablePage: React.FC<TablePageProps> = ({
                     
                     {teamMembers.map((name, personIndex) => {
                       if (isRemonteeCommunication && name === 'DCOM') return null;
+                      const isRowLockedForUser = !isAdmin && row.isLocked;
                       return (
                       <td key={personIndex} className="px-6 py-4" style={{ minWidth: '120px' }}>
                         <input
@@ -663,9 +988,9 @@ const TablePage: React.FC<TablePageProps> = ({
                           min="0"
                           value={row.contributions?.[personIndex] || ''} // Allow empty string during edits
                           onChange={(e) => handleContributionChange(rowIndex, personIndex, e.target.value)}
-                          className="w-24 text-center bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 disabled:bg-gray-200 disabled:cursor-not-allowed"
+                          className="w-24 text-center bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 disabled:bg-gray-200 disabled:cursor-not-allowed disabled:text-gray-400"
                           aria-label={`Contribution de ${teamMembers[personIndex]} pour ${row.thematique}`}
-                          disabled={!isAdmin && teamMembers[personIndex] !== currentUser}
+                          disabled={isRowLockedForUser || (!isAdmin && teamMembers[personIndex] !== currentUser)}
                         />
                       </td>
                     )})}
@@ -698,6 +1023,40 @@ const TablePage: React.FC<TablePageProps> = ({
 
   return (
     <>
+      {/* Floating Tooltip for Thematique Column */}
+      {hoveredThematique && (
+        <div 
+            className="fixed z-50 p-4 bg-white border border-gray-200 rounded-xl shadow-2xl text-sm text-gray-800 pointer-events-none transform transition-opacity duration-200"
+            style={{ 
+                top: hoveredThematique.top, 
+                left: hoveredThematique.left + 5, // Juste à droite
+                width: '350px',
+                maxWidth: '90vw'
+            }}
+        >
+            <div className="absolute top-2 -left-2 w-4 h-4 bg-white border-t border-l border-gray-200 transform -rotate-45"></div>
+            <h4 className="font-bold text-blue-600 text-xs uppercase mb-2 tracking-wide border-b pb-1">Thématique détaillée</h4>
+            <p className="whitespace-pre-wrap leading-relaxed text-gray-700">{hoveredThematique.text}</p>
+        </div>
+      )}
+
+      {/* Floating Tooltip for Synthese Column */}
+      {hoveredSynthese && (
+        <div 
+            className="fixed z-50 p-4 bg-white border border-gray-200 rounded-xl shadow-2xl text-sm text-gray-800 pointer-events-none transform transition-opacity duration-200"
+            style={{ 
+                top: hoveredSynthese.top, 
+                left: hoveredSynthese.left + 5, // Juste à droite
+                width: '450px',
+                maxWidth: '90vw'
+            }}
+        >
+            <div className="absolute top-2 -left-2 w-4 h-4 bg-white border-t border-l border-gray-200 transform -rotate-45"></div>
+            <h4 className="font-bold text-blue-600 text-xs uppercase mb-2 tracking-wide border-b pb-1">Synthèse détaillée</h4>
+            <p className="whitespace-pre-wrap leading-relaxed text-gray-700">{hoveredSynthese.text}</p>
+        </div>
+      )}
+
       {/* Comment Modal */}
       {isCommentModalOpen && selectedRowForComment && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" aria-modal="true" role="dialog">
@@ -738,6 +1097,40 @@ const TablePage: React.FC<TablePageProps> = ({
             </div>
         </div>
       )}
+      
+      {/* Domain Response Modal */}
+      {isDomainResponseModalOpen && selectedRowForComment && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 border-t-4 border-blue-500">
+                <div className="p-6 border-b">
+                    <h2 className="text-xl font-bold text-gray-800 flex items-center gap-2">
+                        Réponse Domaine Expert
+                        <span className={`text-xs px-2 py-1 rounded border ${DOMAIN_TAG_COLORS[selectedRowForComment.domainTag || '']}`}>
+                            {selectedRowForComment.domainTag}
+                        </span>
+                    </h2>
+                    <p className="text-md text-gray-600 mt-1">Sujet : {selectedRowForComment.thematique}</p>
+                </div>
+                <div className="p-6">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Votre réponse en tant que {currentUser} :
+                    </label>
+                    <textarea
+                        rows={5}
+                        className="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2"
+                        value={domainResponseInput}
+                        onChange={(e) => setDomainResponseInput(e.target.value)}
+                        placeholder="Saisissez la réponse ou la validation officielle du domaine..."
+                    />
+                </div>
+                <div className="flex justify-end p-4 bg-gray-50 rounded-b-lg space-x-3">
+                    <button onClick={handleCloseDomainResponseModal} className="py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Annuler</button>
+                    <button onClick={handleSaveDomainResponse} className="py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">Enregistrer la réponse</button>
+                </div>
+            </div>
+        </div>
+      )}
+
       {/* Thematique Comment Modal */}
       {isThematiqueCommentModalOpen && selectedRowForComment && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">

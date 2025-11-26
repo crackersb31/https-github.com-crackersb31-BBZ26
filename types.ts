@@ -12,6 +12,10 @@ export interface RowData {
   contributions: (number | string)[]; // Changé de number[] à (number | string)[] pour accepter la saisie décimale temporaire
   comments?: Record<string, string>; // user -> comment
   isUserCreated?: boolean; // Flag to indicate if the row was created by a user (editable by everyone)
+  isLocked?: boolean; // Flag pour verrouiller la ligne (saisie bloquée pour les non-admins)
+  isCommitteeSelected?: boolean; // Flag pour marquer le sujet à instruire en comité
+  domainTag?: string | null; // Tag de domaine (RH, COM, DC, DT, DF, SST) - Nullable pour Firestore
+  domainResponse?: string | null; // Réponse officielle du domaine expert (ex: réponse du DRH sur un tag RH)
   [key: string]: any; // Allow for dynamic columns
 }
 
@@ -39,7 +43,6 @@ export interface HistoryEntry {
   field: string;
   oldValue: string;
   newValue: string;
-  pageKey?: string;
 }
 
 export interface LoginEntry {

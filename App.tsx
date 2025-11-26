@@ -9,6 +9,8 @@ import UserSynthesisPage from './components/UserSynthesisPage';
 import ConfigurationPage from './components/ConfigurationPage';
 import AdminDiagnosticsPage from './components/AdminDiagnosticsPage';
 import AnnouncementPage from './components/AnnouncementPage'; // Import de la page d'annonce
+import TransverseDomainsPage from './components/TransverseDomainsPage'; // Import de la nouvelle page
+import ExpertResponsesPage from './components/ExpertResponsesPage'; // Import de la page réponses experts
 import { loginCodes, defaultColumns } from './config';
 import { INITIAL_DATA as page1Data } from './data';
 import { INITIAL_DATA_GEH_AA as page2Data } from './data-geh-aa';
@@ -180,8 +182,8 @@ const performPageDeletion = async (pages: PageConfig[], pageId: string) => {
 
 const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<string | null>(null);
-  // Ajout de l'état 'announcement' pour gérer la vue du message
-  const [currentView, setCurrentView] = useState<'login' | 'announcement' | 'summary' | 'table' | 'history' | 'synthesis' | 'userSynthesis' | 'configuration' | 'adminDiagnostics'>('login');
+  // Ajout de l'état 'announcement', 'transverseDomains' et 'expertResponses'
+  const [currentView, setCurrentView] = useState<'login' | 'announcement' | 'summary' | 'table' | 'history' | 'synthesis' | 'userSynthesis' | 'configuration' | 'adminDiagnostics' | 'transverseDomains' | 'expertResponses'>('login');
   const [pageIndex, setPageIndex] = useState(0);
   const [pages, setPages] = useState<PageConfig[]>([]);
   const [loadingPages, setLoadingPages] = useState(true);
@@ -334,6 +336,14 @@ const App: React.FC = () => {
   const handleSelectAdminDiagnostics = () => {
     setCurrentView('adminDiagnostics');
   };
+
+  const handleSelectTransverseDomains = () => {
+    setCurrentView('transverseDomains');
+  };
+
+  const handleSelectExpertResponses = () => {
+    setCurrentView('expertResponses');
+  };
   
   const handleDeletePage = async (pageId: string) => {
     if (!window.confirm("Êtes-vous sûr de vouloir supprimer ce tableau ? Toutes ses données et son historique seront définitivement perdus.")) {
@@ -417,6 +427,8 @@ const App: React.FC = () => {
           onSelectUserSynthesis={handleSelectUserSynthesis}
           onSelectConfiguration={handleSelectConfiguration}
           onSelectAdminDiagnostics={handleSelectAdminDiagnostics}
+          onSelectTransverseDomains={handleSelectTransverseDomains}
+          onSelectExpertResponses={handleSelectExpertResponses} // Passage de la fonction
           onDeletePage={handleDeletePage}
           onLogout={handleLogout}
         />
@@ -456,6 +468,37 @@ const App: React.FC = () => {
 
     if (currentView === 'adminDiagnostics') {
         return <AdminDiagnosticsPage onBack={handleBackToSummary} />;
+    }
+    
+    if (currentView === 'expertResponses') {
+        return <ExpertResponsesPage onBack={handleBackToSummary} pageConfigs={pages} />;
+    }
+
+    if (currentView === 'transverseDomains') {
+        // Rechercher la configuration spécifique du tableau "Fiches transverses"
+        const fichesTransversesConfig = pages.find(p => p.title === 'Fiches transverses');
+        
+        if (!fichesTransversesConfig) {
+            return (
+                <div className="flex flex-col items-center justify-center min-h-screen p-4">
+                    <p className="text-red-600 font-bold mb-4">Erreur : Configuration du tableau "Fiches transverses" introuvable.</p>
+                    <button onClick={handleBackToSummary} className="py-2 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                        Retour au sommaire
+                    </button>
+                </div>
+            );
+        }
+
+        return (
+            <TransverseDomainsPage 
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                onBack={handleBackToSummary}
+                pageConfig={fichesTransversesConfig}
+                onUpdatePageConfig={handleUpdatePageConfig}
+                onToggleStatus={(status) => handleTogglePageStatus(fichesTransversesConfig.id, status)}
+            />
+        );
     }
     
     return null;

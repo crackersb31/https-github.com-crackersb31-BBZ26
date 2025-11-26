@@ -2,12 +2,25 @@
 import React, { useState, useEffect } from 'react';
 import { loginCodes, teamMembers } from '../config';
 import { db } from '../firebase-config';
-import { collection, getDocs, writeBatch, doc, getDoc, setDoc } from 'firebase/firestore';
-import { type RowData, type PageConfig, type AnnouncementConfig } from '../types';
+import { collection, getDocs, writeBatch, doc, getDoc, setDoc, query, orderBy } from 'firebase/firestore';
+import { type RowData, type PageConfig, type AnnouncementConfig, type LoginEntry } from '../types';
 
 interface ConfigurationPageProps {
   onBack: () => void;
   currentUser: string;
+}
+
+interface ConnectionStat {
+    user: string;
+    lastConnection: string; // ISO Date string
+    count: number;
+}
+
+interface PageVisit {
+    user: string;
+    pageId: string;
+    pageTitle: string;
+    lastVisit: string;
 }
 
 const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUser }) => {
@@ -22,22 +35,28 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
   });
   const [announcementSaveStatus, setAnnouncementSaveStatus] = useState('');
 
+  // State for Connection Stats & Matrix
+  const [connectionStats, setConnectionStats] = useState<ConnectionStat[]>([]);
+  const [matrixPages, setMatrixPages] = useState<PageConfig[]>([]);
+  const [visitsData, setVisitsData] = useState<PageVisit[]>([]);
+
   const isAdmin = currentUser === 'ADMIN';
 
   const tabs = [
     { id: 'structure', label: "Structure de l'application" },
-    { id: 'saisies', label: 'Guide utilisateur & Saisies' },
+    { id: 'saisies', label: 'Guide utilisateur & Nouveautés' },
   ];
 
   if (isAdmin) {
-    tabs.push({ id: 'communication', label: 'Communication' }); // Nouvel onglet
+    tabs.push({ id: 'communication', label: 'Communication' });
+    tabs.push({ id: 'connexions', label: 'Suivi des Connexions' });
     tabs.push({ id: 'droits', label: 'Droits des administrateurs' });
     tabs.push({ id: 'codes', label: "Codes d'accès" });
     tabs.push({ id: 'maintenance', label: "Maintenance & Reset" });
   }
   
   useEffect(() => {
-    if (!isAdmin && (activeTab === 'droits' || activeTab === 'codes' || activeTab === 'maintenance' || activeTab === 'communication')) {
+    if (!isAdmin && (activeTab === 'droits' || activeTab === 'codes' || activeTab === 'maintenance' || activeTab === 'communication' || activeTab === 'connexions')) {
       setActiveTab('structure');
     }
   }, [isAdmin, activeTab]);
@@ -60,6 +79,70 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
               }
           };
           loadAnnouncements();
+      }
+  }, [activeTab, isAdmin]);
+
+  // Load connection stats and matrix data when entering connexions tab
+  useEffect(() => {
+      if (activeTab === 'connexions' && isAdmin) {
+          const loadConnectionsAndMatrix = async () => {
+              setIsLoading(true);
+              try {
+                  // 1. Load connection stats (Logins)
+                  const loginsRef = collection(db, 'logins');
+                  const q = query(loginsRef, orderBy('timestamp', 'desc'));
+                  const snapshot = await getDocs(q);
+                  
+                  const statsMap: Record<string, ConnectionStat> = {};
+                  Object.values(loginCodes).forEach(user => {
+                      if (user !== 'ADMIN') {
+                          statsMap[user] = { user, lastConnection: '', count: 0 };
+                      }
+                  });
+
+                  snapshot.forEach(doc => {
+                      const data = doc.data() as LoginEntry;
+                      if (data.user && data.user !== 'ADMIN') {
+                          if (!statsMap[data.user]) {
+                              statsMap[data.user] = { user: data.user, lastConnection: data.timestamp, count: 1 };
+                          } else {
+                              statsMap[data.user].count += 1;
+                              if (!statsMap[data.user].lastConnection) {
+                                  statsMap[data.user].lastConnection = data.timestamp;
+                              }
+                          }
+                      }
+                  });
+
+                  const sortedStats = Object.values(statsMap).sort((a, b) => {
+                      if (!a.lastConnection) return 1;
+                      if (!b.lastConnection) return -1;
+                      return new Date(b.lastConnection).getTime() - new Date(a.lastConnection).getTime();
+                  });
+
+                  setConnectionStats(sortedStats);
+
+                  // 2. Load Pages for Matrix
+                  const pagesRef = doc(db, 'appConfig', 'pages');
+                  const pagesSnap = await getDoc(pagesRef);
+                  if (pagesSnap.exists()) {
+                      setMatrixPages(pagesSnap.data().pageList || []);
+                  }
+
+                  // 3. Load Visits for Matrix
+                  const visitsRef = collection(db, 'pageVisits');
+                  const visitsSnap = await getDocs(visitsRef);
+                  const visits: PageVisit[] = [];
+                  visitsSnap.forEach(doc => visits.push(doc.data() as PageVisit));
+                  setVisitsData(visits);
+
+              } catch (error) {
+                  console.error("Erreur chargement connexions", error);
+              } finally {
+                  setIsLoading(false);
+              }
+          };
+          loadConnectionsAndMatrix();
       }
   }, [activeTab, isAdmin]);
 
@@ -98,12 +181,10 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
     try {
         const batchSize = 500;
         
-        // 1. Supprimer l'historique
         const historyRef = collection(db, 'history');
         const historySnapshot = await getDocs(historyRef);
         const historyDocs = historySnapshot.docs;
         
-        // Firestore limite les batchs à 500 opérations
         for (let i = 0; i < historyDocs.length; i += batchSize) {
             const batch = writeBatch(db);
             const chunk = historyDocs.slice(i, i + batchSize);
@@ -111,7 +192,6 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
             await batch.commit();
         }
 
-        // 2. Supprimer les logs de connexion
         const loginsRef = collection(db, 'logins');
         const loginsSnapshot = await getDocs(loginsRef);
         const loginsDocs = loginsSnapshot.docs;
@@ -119,6 +199,17 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
         for (let i = 0; i < loginsDocs.length; i += batchSize) {
             const batch = writeBatch(db);
             const chunk = loginsDocs.slice(i, i + batchSize);
+            chunk.forEach(doc => batch.delete(doc.ref));
+            await batch.commit();
+        }
+
+        // Reset also visits tracking
+        const visitsRef = collection(db, 'pageVisits');
+        const visitsSnapshot = await getDocs(visitsRef);
+        const visitsDocs = visitsSnapshot.docs;
+        for (let i = 0; i < visitsDocs.length; i += batchSize) {
+            const batch = writeBatch(db);
+            const chunk = visitsDocs.slice(i, i + batchSize);
             chunk.forEach(doc => batch.delete(doc.ref));
             await batch.commit();
         }
@@ -143,7 +234,6 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
 
       setIsLoading(true);
       try {
-          // 1. Récupérer la liste des pages
           const pagesConfigRef = doc(db, 'appConfig', 'pages');
           const pagesConfigSnap = await getDoc(pagesConfigRef);
           
@@ -154,7 +244,6 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
           const pages: PageConfig[] = pagesConfigSnap.data().pageList;
           const batch = writeBatch(db);
           
-          // 2. Pour chaque page, récupérer les données et mettre à zéro les contributions
           for (const page of pages) {
               const pageRef = doc(db, 'pagesData', page.storageKey);
               const pageSnap = await getDoc(pageRef);
@@ -163,7 +252,7 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
                   const rows = pageSnap.data().rows as RowData[];
                   const updatedRows = rows.map(row => ({
                       ...row,
-                      contributions: Array(teamMembers.length).fill(0) // Remise à zéro du tableau de contributions
+                      contributions: Array(teamMembers.length).fill(0)
                   }));
                   batch.set(pageRef, { rows: updatedRows });
               }
@@ -180,6 +269,49 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
       }
   };
 
+  const getTimeAgo = (dateString: string) => {
+      if (!dateString) return 'Jamais connecté';
+      const now = new Date();
+      const past = new Date(dateString);
+      const diffMs = now.getTime() - past.getTime();
+      const diffMins = Math.floor(diffMs / 60000);
+      const diffHours = Math.floor(diffMins / 60);
+      const diffDays = Math.floor(diffHours / 24);
+
+      if (diffMins < 60) return `Il y a ${diffMins} min`;
+      if (diffHours < 24) return `Il y a ${diffHours} h`;
+      return `Il y a ${diffDays} jours`;
+  };
+
+  const getStatusColor = (dateString: string) => {
+      if (!dateString) return 'bg-gray-100 text-gray-500';
+      const diffDays = (new Date().getTime() - new Date(dateString).getTime()) / (1000 * 3600 * 24);
+      if (diffDays < 3) return 'bg-green-100 text-green-700';
+      if (diffDays < 10) return 'bg-yellow-100 text-yellow-700';
+      return 'bg-red-100 text-red-700';
+  };
+
+  // Helper pour la matrice
+  const hasVisited = (user: string, pageId: string) => {
+      return visitsData.some(v => v.user === user && v.pageId === pageId);
+  };
+
+  const getVisitDate = (user: string, pageId: string) => {
+      const visit = visitsData.find(v => v.user === user && v.pageId === pageId);
+      return visit ? new Date(visit.lastVisit).toLocaleDateString('fr-FR') : '';
+  };
+  
+  const isOwnPage = (user: string, pageTitle: string) => {
+      return pageTitle.toUpperCase().includes(user.toUpperCase());
+  };
+
+  const sortedUsersForMatrix = Object.values(loginCodes).filter(u => u !== 'ADMIN').sort();
+  const sortedPagesForMatrix = matrixPages.sort((a, b) => {
+      if (a.title === 'Fiches transverses') return -1;
+      if (b.title === 'Fiches transverses') return 1;
+      return a.title.localeCompare(b.title);
+  });
+
   const renderContent = () => {
     switch (activeTab) {
       case 'structure':
@@ -187,35 +319,42 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
           <div className="prose max-w-none">
             <h3 className="text-xl font-semibold text-gray-800">Mission de l'application</h3>
             <p className="text-gray-800">
-              <strong>Activation des leviers BBZ budget 26</strong> est l'outil central pour piloter les contributions financières. Elle remplace les fichiers Excel dispersés pour offrir une consolidation en temps réel, sécurisée et transparente.
+              <strong>Activation des leviers BBZ budget 26</strong> est l'outil central pour piloter les contributions financières. 
+              Elle remplace les fichiers Excel dispersés pour offrir une consolidation en temps réel, sécurisée et transparente.
             </p>
-            <h3 className="text-xl font-semibold text-gray-800 mt-6">Organisation du Sommaire</h3>
-            <p className="text-gray-800">L'écran d'accueil est désormais structuré en <strong>3 zones distinctes</strong> pour plus de clarté :</p>
-            <dl className="space-y-4">
-                <div className="bg-amber-50 p-3 rounded-lg border border-amber-100">
-                    <dt className="font-bold text-amber-800">1. Remontée Sous Unité</dt>
-                    <dd className="text-amber-900 text-sm mt-1">
-                        Contient les tableaux spécifiques aux entités géographiques et techniques : <em>GEH AA, GEH AG, GEH TA, GMH</em>.
-                    </dd>
-                </div>
-                <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
-                    <dt className="font-bold text-blue-800">2. Etat Major Unité</dt>
-                    <dd className="text-blue-900 text-sm mt-1">
-                        Regroupe le tableau central <strong>"Fiches transverses"</strong> ainsi que les remontées des fonctions support (<em>DC, DCOM, DF, DRH, DT, SST...</em>).
-                    </dd>
-                </div>
-                <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
-                    <dt className="font-bold text-emerald-800">3. Statistique et Configuration</dt>
-                    <dd className="text-emerald-900 text-sm mt-1">
-                        La zone de pilotage et d'analyse :
-                        <ul className="list-disc list-inside mt-2">
-                            <li><strong>Configuration & Aide :</strong> La page actuelle.</li>
-                            <li><strong>Synthèse par Utilisateur :</strong> Pour voir toutes vos contributions sur une seule page.</li>
-                            <li><strong>Outils Admin :</strong> Synthèse Globale, Historique, Diagnostic.</li>
+            
+            <h3 className="text-xl font-semibold text-gray-800 mt-6">Nouvelle Organisation (Onglets)</h3>
+            <p className="text-gray-800">Pour plus de clarté, le Sommaire est désormais divisé en <strong>2 espaces majeurs</strong> accessibles via le sélecteur en haut de page :</p>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                <div className="bg-blue-50 p-4 rounded-xl border border-blue-200">
+                    <h4 className="font-bold text-blue-800 flex items-center gap-2">
+                        🚀 Espace Saisie
+                    </h4>
+                    <p className="text-blue-900 text-sm mt-2">
+                        C'est votre espace de travail quotidien. Il contient :
+                        <ul className="list-disc list-inside mt-2 space-y-1">
+                            <li>Les remontées <strong>Sous Unité</strong> (GEH, GMH...)</li>
+                            <li>Les remontées <strong>Etat Major</strong> (DC, DRH, DF...)</li>
+                            <li>L'accès direct aux <strong>Domaines Transverses</strong></li>
                         </ul>
-                    </dd>
+                    </p>
                 </div>
-            </dl>
+                <div className="bg-emerald-50 p-4 rounded-xl border border-emerald-200">
+                    <h4 className="font-bold text-emerald-800 flex items-center gap-2">
+                         📊 Espace Pilotage
+                    </h4>
+                    <p className="text-emerald-900 text-sm mt-2">
+                        C'est l'espace d'analyse et de supervision. Il contient :
+                        <ul className="list-disc list-inside mt-2 space-y-1">
+                            <li>Le <strong>Dashboard</strong> statistique (Utilisateurs actifs...)</li>
+                            <li>Les outils de <strong>Synthèse</strong> (Globale & Utilisateur)</li>
+                            <li>L'<strong>Historique</strong> et la Configuration</li>
+                            <li>Le <strong>Suivi des Réponses Experts</strong></li>
+                        </ul>
+                    </p>
+                </div>
+            </div>
           </div>
         );
       case 'saisies':
@@ -229,32 +368,39 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
                 <li><strong className="text-blue-700">Commentaires :</strong> Le bouton "Gérer" permet d'annoter n'importe quelle ligne.</li>
             </ul>
 
-            <h3 className="text-xl font-semibold text-gray-800 mt-8">Nouveautés & Ergonomie</h3>
+            <h3 className="text-xl font-semibold text-gray-800 mt-8">Nouveautés & Fonctionnalités Avancées</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-                <div className="border p-4 rounded-lg bg-gray-50">
-                    <h4 className="font-bold text-gray-800 mb-2">📌 Colonnes Figées</h4>
+                <div className="border p-4 rounded-lg bg-gray-50 border-l-4 border-l-purple-500">
+                    <h4 className="font-bold text-purple-800 mb-2 flex items-center gap-2">
+                        💬 Workflow Expert (Nouveau)
+                    </h4>
                     <p className="text-sm text-gray-600">
-                        Lorsque vous faites défiler le tableau vers la droite pour voir les équipes, les <strong>6 premières colonnes</strong> (Thématique, Origine...) restent fixes à gauche. Vous ne perdez jamais le contexte de la ligne !
+                        Si une thématique est taguée avec votre domaine (ex: badge <span className="text-xs bg-pink-100 text-pink-800 px-1 rounded border border-pink-200">RH</span> pour le DRH) :
+                        <ul className="list-decimal list-inside mt-2 space-y-1">
+                            <li>Cliquez sur le badge coloré.</li>
+                            <li>Une fenêtre s'ouvre pour saisir votre <strong>Réponse Officielle</strong>.</li>
+                            <li>Une icône "bulle" apparaîtra pour indiquer qu'une réponse a été apportée.</li>
+                        </ul>
+                    </p>
+                </div>
+                <div className="border p-4 rounded-lg bg-gray-50">
+                    <h4 className="font-bold text-gray-800 mb-2">📌 Colonne Figée</h4>
+                    <p className="text-sm text-gray-600">
+                        Pour faciliter la lecture, la colonne <strong>Thématique</strong> reste désormais figée à gauche lorsque vous faites défiler le tableau vers la droite.
                     </p>
                 </div>
                 <div className="border p-4 rounded-lg bg-gray-50">
                     <h4 className="font-bold text-gray-800 mb-2">✅ Validation "Saisie Terminée"</h4>
                     <p className="text-sm text-gray-600">
-                        Dans votre tableau de remontée, un interrupteur en haut à droite permet de signaler officiellement que vous avez fini.
+                        Dans votre tableau, un interrupteur en haut à droite permet de valider votre travail.
                         <br/>
-                        <span className="text-green-600 font-bold text-xs">Passer au vert pour valider</span>
+                        <span className="text-green-600 font-bold text-xs">Passer au vert pour informer l'admin</span>
                     </p>
                 </div>
                 <div className="border p-4 rounded-lg bg-gray-50">
-                    <h4 className="font-bold text-gray-800 mb-2">📊 Exports Excel (CSV)</h4>
+                    <h4 className="font-bold text-gray-800 mb-2">🔍 Info-Bulles (Loupe)</h4>
                     <p className="text-sm text-gray-600">
-                        Un bouton vert <strong>"Exporter CSV"</strong> est disponible sur les pages de Synthèse (Globale et Utilisateur). Il génère un fichier compatible Excel (point-virgule) ne contenant que les lignes pertinentes (Total > 0).
-                    </p>
-                </div>
-                <div className="border p-4 rounded-lg bg-gray-50">
-                    <h4 className="font-bold text-gray-800 mb-2">👁️ Filtres Intelligents</h4>
-                    <p className="text-sm text-gray-600">
-                       Sur les synthèses, l'option <strong>"Masquer les lignes à 0"</strong> permet d'épurer l'affichage instantanément pour se concentrer sur l'essentiel.
+                       Passez simplement votre souris sur les colonnes <strong>Thématique</strong> ou <strong>Synthèse</strong> pour voir apparaître le texte complet dans une grande fenêtre flottante.
                     </p>
                 </div>
             </div>
@@ -332,6 +478,119 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
                         {isLoading ? 'Sauvegarde...' : 'Enregistrer la configuration'}
                     </button>
                 </div>
+            </div>
+        );
+      case 'connexions':
+        if (!isAdmin) return null;
+        return (
+            <div className="prose max-w-none">
+                <h3 className="text-xl font-semibold text-gray-800 flex items-center gap-2 mb-6">
+                    <svg className="w-6 h-6 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    Suivi des Connexions
+                </h3>
+                
+                {isLoading ? (
+                    <div className="text-center p-8 text-gray-500">Chargement des données...</div>
+                ) : (
+                    <div className="space-y-10">
+                        {/* TABLEAU 1: DERNIÈRES CONNEXIONS */}
+                        <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                             <div className="bg-gray-50 px-4 py-3 border-b border-gray-200">
+                                <h4 className="text-md font-bold text-gray-700">Journal des connexions à l'application</h4>
+                            </div>
+                            <table className="min-w-full divide-y divide-gray-300">
+                                <thead className="bg-gray-50">
+                                    <tr>
+                                        <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-semibold text-gray-900 sm:pl-6">Utilisateur</th>
+                                        <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Dernière connexion</th>
+                                        <th scope="col" className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900">Délai</th>
+                                        <th scope="col" className="px-3 py-3.5 text-center text-sm font-semibold text-gray-900">Fréquence</th>
+                                        <th scope="col" className="px-3 py-3.5 text-center text-sm font-semibold text-gray-900">Statut</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-200 bg-white">
+                                    {connectionStats.map((stat) => (
+                                        <tr key={stat.user} className="hover:bg-gray-50 transition-colors">
+                                            <td className="whitespace-nowrap py-4 pl-4 pr-3 text-sm font-medium text-gray-900 sm:pl-6">{stat.user}</td>
+                                            <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                                {stat.lastConnection ? new Date(stat.lastConnection).toLocaleString('fr-FR') : '—'}
+                                            </td>
+                                            <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500">
+                                                {getTimeAgo(stat.lastConnection)}
+                                            </td>
+                                            <td className="whitespace-nowrap px-3 py-4 text-sm text-gray-500 text-center">
+                                                {stat.count} fois
+                                            </td>
+                                            <td className="whitespace-nowrap px-3 py-4 text-sm text-center">
+                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${getStatusColor(stat.lastConnection)}`}>
+                                                    {stat.lastConnection ? (new Date().getTime() - new Date(stat.lastConnection).getTime() < 86400000 * 3 ? 'Actif' : 'Inactif') : 'Jamais'}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* TABLEAU 2: MATRICE DE CONSULTATION */}
+                        <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+                            <div className="bg-emerald-50 px-4 py-3 border-b border-emerald-200">
+                                <h4 className="text-md font-bold text-emerald-800 flex items-center gap-2">
+                                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
+                                    Matrice de Consultation des Tableaux
+                                </h4>
+                                <p className="text-xs text-emerald-700 mt-1">
+                                    Suivez quel utilisateur a consulté quel tableau.
+                                    <span className="ml-4 font-bold">Légende :</span> 
+                                    <span className="mx-2">✅ Visité</span> 
+                                    <span className="mx-2 text-gray-400">❌ Jamais vu</span>
+                                    <span className="mx-2">⭐ Son tableau (vu)</span>
+                                    <span className="mx-2">⚠️ Son tableau (jamais vu)</span>
+                                </p>
+                            </div>
+                            <div className="overflow-x-auto">
+                                <table className="min-w-full divide-y divide-gray-300">
+                                    <thead className="bg-gray-50">
+                                        <tr>
+                                            <th scope="col" className="py-3.5 pl-4 pr-3 text-left text-sm font-bold text-gray-900 sm:pl-6 sticky left-0 bg-gray-50 z-10 border-r">
+                                                Utilisateur
+                                            </th>
+                                            {sortedPagesForMatrix.map(page => (
+                                                <th key={page.id} scope="col" className="px-2 py-3.5 text-center text-xs font-semibold text-gray-600 rotate-45 h-32 align-bottom w-12">
+                                                    <div>{page.title.replace('Remontée ', '').replace('Fiches ', '')}</div>
+                                                </th>
+                                            ))}
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-200 bg-white">
+                                        {sortedUsersForMatrix.map((user) => (
+                                            <tr key={user} className="hover:bg-gray-50">
+                                                <td className="whitespace-nowrap py-2 pl-4 pr-3 text-sm font-bold text-gray-900 sm:pl-6 sticky left-0 bg-white z-10 border-r">
+                                                    {user}
+                                                </td>
+                                                {sortedPagesForMatrix.map(page => {
+                                                    const visited = hasVisited(user, page.id);
+                                                    const date = getVisitDate(user, page.id);
+                                                    const isOwner = isOwnPage(user, page.title);
+                                                    
+                                                    return (
+                                                        <td key={page.id} className="px-2 py-2 text-center border-l border-gray-100" title={visited ? `Vu le ${date}` : "Jamais consulté"}>
+                                                            {visited ? (
+                                                                isOwner ? <span className="text-lg">⭐</span> : <span className="text-green-500 font-bold">✅</span>
+                                                            ) : (
+                                                                isOwner ? <span className="text-lg" title="Alerte : N'a pas consulté son propre tableau !">⚠️</span> : <span className="text-gray-200 text-xs">❌</span>
+                                                            )}
+                                                        </td>
+                                                    );
+                                                })}
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         );
       case 'droits':
@@ -492,7 +751,7 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
                 className={`${
                   activeTab === tab.id
                     ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
                 } whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm focus:outline-none transition-colors duration-200`}
               >
                 {tab.label}
