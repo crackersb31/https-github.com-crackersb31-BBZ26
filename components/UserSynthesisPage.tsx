@@ -99,7 +99,7 @@ const UserSynthesisPage: React.FC<UserSynthesisPageProps> = ({ onBack, pageConfi
       }
 
       const headers = [
-        "Thématique", "Synthèse", "Origine", "Difficulté", "Nature", "Estimation",
+        "Thématique", "Synthèse", "Origine", "Difficulté", "Nature", "Assiette 25",
         `Contribution ${selectedUser}`
       ];
 
@@ -216,7 +216,7 @@ const UserSynthesisPage: React.FC<UserSynthesisPageProps> = ({ onBack, pageConfi
                   <th scope="col" className="px-6 py-4 font-semibold">Origine</th>
                   <th scope="col" className="px-6 py-4 font-semibold">Difficulté</th>
                   <th scope="col" className="px-6 py-4 font-semibold">Nature</th>
-                  <th scope="col" className="px-6 py-4 font-semibold">Estimation</th>
+                  <th scope="col" className="px-6 py-4 font-semibold">Assiette 25</th>
                   <th scope="col" className="px-6 py-4 font-bold text-center text-blue-700 bg-blue-50 border-l border-blue-100">
                       Contribution {selectedUser}
                   </th>

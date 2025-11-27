@@ -1,7 +1,6 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { type RowData, type HistoryEntry, type PageConfig, type Column } from '../types';
-// FIX: Import defaultColumns from config to resolve reference errors.
 import { teamMembers, defaultColumns, difficultyOptions } from '../config';
 import HistoryPage from './HistoryPage';
 import { db } from '../firebase-config';
@@ -73,6 +72,9 @@ const TablePage: React.FC<TablePageProps> = ({
   const [isDomainResponseModalOpen, setIsDomainResponseModalOpen] = useState(false);
   const [domainResponseInput, setDomainResponseInput] = useState('');
 
+  // State for Help Modal (Guide BBZ)
+  const [isHelpModalOpen, setIsHelpModalOpen] = useState(false);
+
   const [isColumnEditorOpen, setIsColumnEditorOpen] = useState(false);
   const [currentColumns, setCurrentColumns] = useState<Column[]>([]);
   
@@ -80,6 +82,9 @@ const TablePage: React.FC<TablePageProps> = ({
   const [hoveredSynthese, setHoveredSynthese] = useState<{ text: string, top: number, left: number } | null>(null);
   // State for hover tooltip on Thematique column
   const [hoveredThematique, setHoveredThematique] = useState<{ text: string, top: number, left: number } | null>(null);
+
+  // Ref for horizontal scrolling
+  const tableContainerRef = useRef<HTMLDivElement>(null);
 
   const isAdmin = currentUser === 'ADMIN';
 
@@ -117,6 +122,33 @@ const TablePage: React.FC<TablePageProps> = ({
     trackVisit();
   }, [currentUser, pageId, title]);
   // ---------------------------------------
+
+  // --- KEYBOARD NAVIGATION (ARROWS) ---
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+        // Ignorer si l'utilisateur est en train de taper dans un champ (input ou textarea)
+        const activeElement = document.activeElement as HTMLElement;
+        const isInputActive = activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA' || activeElement.tagName === 'SELECT');
+        
+        if (isInputActive) return;
+
+        if (e.key === 'ArrowRight') {
+            e.preventDefault();
+            if (tableContainerRef.current) {
+                tableContainerRef.current.scrollBy({ left: 300, behavior: 'smooth' });
+            }
+        } else if (e.key === 'ArrowLeft') {
+            e.preventDefault();
+            if (tableContainerRef.current) {
+                tableContainerRef.current.scrollBy({ left: -300, behavior: 'smooth' });
+            }
+        }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+  // ------------------------------------
 
   useEffect(() => {
     const fetchData = async () => {
@@ -1023,6 +1055,73 @@ const TablePage: React.FC<TablePageProps> = ({
 
   return (
     <>
+      {/* Help Modal (Guide BBZ) */}
+      {isHelpModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 overflow-hidden animate-fade-in-up">
+                <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 border-b border-blue-500">
+                    <div className="flex justify-between items-center">
+                        <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                            Guide de Saisie BBZ
+                        </h2>
+                        <button onClick={() => setIsHelpModalOpen(false)} className="text-blue-100 hover:text-white transition-colors">
+                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div className="p-6 space-y-6 text-gray-700">
+                    <div className="bg-blue-50 p-4 rounded-lg border-l-4 border-blue-500">
+                        <h3 className="font-bold text-blue-900 text-lg mb-2">1. Colonne "Assiette 25" (Texte)</h3>
+                        <p className="mb-2"><strong>Ce qu'il faut saisir :</strong> L'Assiette 2025 ou le Tendanciel 2026.</p>
+                        <ul className="list-disc pl-5 space-y-1 text-sm">
+                            <li><strong>C'est quoi ?</strong> Le montant "Si on ne fait rien" ou "Ce qu'on a dépensé l'an dernier". C'est la base de référence.</li>
+                            <li><strong>Pourquoi ?</strong> Le BBZ part de zéro, mais pour mesurer un effort, il faut un point de comparaison.</li>
+                        </ul>
+                    </div>
+
+                    <div className="bg-green-50 p-4 rounded-lg border-l-4 border-green-500">
+                        <h3 className="font-bold text-green-900 text-lg mb-2">2. Colonne "Contribution" (Chiffre)</h3>
+                        <p className="mb-2"><strong>Ce qu'il faut saisir :</strong> Le Gain / Économie net 2026.</p>
+                        <ul className="list-disc pl-5 space-y-1 text-sm">
+                            <li><strong>C'est quoi ?</strong> L'argent qu'on "rend" à l'entreprise grâce au levier.</li>
+                            <li><strong>Attention :</strong> Ne saisissez pas votre budget restant, mais bien l'économie réalisée.</li>
+                        </ul>
+                    </div>
+
+                    <div className="border-t pt-4">
+                        <h4 className="font-bold text-gray-800 mb-2 flex items-center gap-2">
+                            💡 Exemple Concret : "Frais de déplacement"
+                        </h4>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div className="border p-3 rounded bg-gray-50">
+                                <span className="block font-semibold text-gray-500 mb-1">Colonne Assiette 25</span>
+                                <span className="font-mono text-gray-800">"Base 2025 : 100 k€"</span>
+                            </div>
+                            <div className="border p-3 rounded bg-gray-50">
+                                <span className="block font-semibold text-gray-500 mb-1">Colonne Contribution</span>
+                                <span className="font-mono text-green-600 font-bold">"10"</span>
+                                <span className="block text-xs text-gray-400 mt-1">(Sous-entendu : 10 k€ d'économie)</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div className="p-4 bg-gray-50 border-t flex justify-end">
+                    <button 
+                        onClick={() => setIsHelpModalOpen(false)}
+                        className="px-6 py-2 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 shadow-md"
+                    >
+                        J'ai compris
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
+
       {/* Floating Tooltip for Thematique Column */}
       {hoveredThematique && (
         <div 
@@ -1204,7 +1303,7 @@ const TablePage: React.FC<TablePageProps> = ({
               &larr; Retour au sommaire
             </button>
         </div>
-        <div className="justify-self-center text-center">
+        <div className="justify-self-center text-center flex flex-col items-center">
             <h1 className="text-3xl sm:text-4xl font-bold text-gray-800">{title}</h1>
             {subtitle && <p className="mt-1 text-lg text-red-600 font-bold">{subtitle}</p>}
         </div>
@@ -1256,6 +1355,16 @@ const TablePage: React.FC<TablePageProps> = ({
                         </select>
                     </div>
                 )}
+                <button 
+                    onClick={() => setIsHelpModalOpen(true)}
+                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-lg font-bold shadow-md hover:shadow-lg hover:scale-105 transition-all animate-pulse"
+                    title="Cliquer pour afficher l'aide à la saisie"
+                >
+                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    AIDE SAISIE BBZ
+                </button>
             </div>
              <div className="flex items-center space-x-2 sm:space-x-4">
                 {/* Bouton de bascule 'Saisie Terminée' pour le propriétaire du tableau */}
@@ -1299,7 +1408,10 @@ const TablePage: React.FC<TablePageProps> = ({
                 </button>
             </div>
         </div>
-        <div className="overflow-auto max-h-[75vh]">
+        <div 
+            ref={tableContainerRef}
+            className="overflow-auto max-h-[75vh]"
+        >
           {renderTable()}
         </div>
       </main>

@@ -180,7 +180,7 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
 
       // 2. Définir les en-têtes (uniquement les colonnes visibles)
       const headers = [
-        "Thématique", "Synthèse", "Origine", "Difficulté", "Nature", "Estimation",
+        "Thématique", "Synthèse", "Origine", "Difficulté", "Nature", "Assiette 25",
         ...teamMembers.map(m => `Contrib. ${m}`),
         "Total"
       ];
@@ -360,7 +360,7 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
                   <FilterableHeader title="Origine" filterKey="origine" />
                   <FilterableHeader title="Difficulté" filterKey="difficulte" />
                   <FilterableHeader title="Nature" filterKey="nature" />
-                  <th scope="col" className="px-6 py-4 font-semibold whitespace-nowrap">Estimation</th>
+                  <th scope="col" className="px-6 py-4 font-semibold whitespace-nowrap">Assiette 25</th>
                   {teamMembers.map((name, index) => (
                     <th key={name} scope="col" className="px-6 py-4 font-semibold text-center whitespace-nowrap">
                       <button onClick={() => setFilters(f => ({ ...f, contribution: f.contribution === index ? null : index }))} className={`hover:text-blue-600 w-full ${filters.contribution === index ? 'text-blue-600 font-bold' : ''}`} title={`Filtrer par ${name}`}>

@@ -1,3 +1,4 @@
+
 import { type Column } from './types';
 
 export const teamMembers = ['DCOM', 'DRH', 'SST', 'DC', 'DF', 'DT', 'GEH AG', 'GEH AA', 'GEH TA', 'GMH'];
@@ -28,7 +29,7 @@ export const defaultColumns: Column[] = [
     { key: 'difficulte', header: 'Difficulté de mise en œuvre', visible: true, editable: true, type: 'badge' },
     { key: 'synthese', header: 'Synthèse du levier et de l’objectif BBZ', visible: true, editable: true, type: 'textarea' },
     { key: 'nature', header: 'Nature du levier', visible: true, editable: true, type: 'text' },
-    { key: 'estimation', header: 'Estimation / Repère chiffré', visible: true, editable: true, type: 'text' },
+    { key: 'estimation', header: 'Assiette 25', visible: true, editable: true, type: 'text' },
     { key: 'estimationComment', header: 'Commentaire Estimation', visible: true, editable: true, type: 'textarea' },
 ];
 

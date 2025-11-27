@@ -227,6 +227,32 @@ const SummaryPage: React.FC<SummaryPageProps> = ({
   // État pour les onglets majeurs
   const [activeTab, setActiveTab] = useState<'saisie' | 'pilotage' | 'configuration'>('saisie');
 
+  // --- KEYBOARD NAVIGATION FOR TABS ---
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+        // Ignorer si l'utilisateur est en train de taper dans un champ
+        const activeElement = document.activeElement as HTMLElement;
+        if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA' || activeElement.tagName === 'SELECT')) {
+            return;
+        }
+
+        const tabs: ('saisie' | 'pilotage' | 'configuration')[] = ['saisie', 'pilotage', 'configuration'];
+        const currentIndex = tabs.indexOf(activeTab);
+
+        if (e.key === 'ArrowRight') {
+            const nextIndex = (currentIndex + 1) % tabs.length;
+            setActiveTab(tabs[nextIndex]);
+        } else if (e.key === 'ArrowLeft') {
+            const prevIndex = (currentIndex - 1 + tabs.length) % tabs.length;
+            setActiveTab(tabs[prevIndex]);
+        }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [activeTab]);
+  // ------------------------------------
+
   useEffect(() => {
     const fetchStats = async () => {
       if (!isAdmin) {

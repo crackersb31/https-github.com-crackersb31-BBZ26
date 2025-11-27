@@ -28,6 +28,7 @@ const initialPages: PageConfig[] = [
     initialData: page1Data,
     storageKey: "contributionTableData_p1",
     historyKey: "contributionHistory_p1",
+    columns: defaultColumns,
   },
   {
     id: "page2",
@@ -36,6 +37,7 @@ const initialPages: PageConfig[] = [
     initialData: page2Data,
     storageKey: "contributionTableData_p2",
     historyKey: "contributionHistory_p2",
+    columns: defaultColumns,
   },
   {
     id: "page3",
@@ -44,6 +46,7 @@ const initialPages: PageConfig[] = [
     initialData: page3Data,
     storageKey: "contributionTableData_p3",
     historyKey: "contributionHistory_p3",
+    columns: defaultColumns,
   },
   {
     id: "page12",
@@ -62,6 +65,7 @@ const initialPages: PageConfig[] = [
     initialData: page4Data,
     storageKey: "contributionTableData_p4",
     historyKey: "contributionHistory_p4",
+    columns: defaultColumns,
   },
   {
     id: "page5",
@@ -226,6 +230,29 @@ const App: React.FC = () => {
                     firestorePages = currentPagesList;
                     configChanged = true;
                 }
+
+                // Migration : Renommer l'en-tête de colonne 'estimation' en 'Assiette 25'
+                firestorePages = firestorePages.map(page => {
+                    if (page.columns) {
+                        let columnsChanged = false;
+                        const updatedColumns = page.columns.map(col => {
+                            if (col.key === 'estimation' && col.header !== 'Assiette 25') {
+                                columnsChanged = true;
+                                configChanged = true;
+                                return { ...col, header: 'Assiette 25' };
+                            }
+                            return col;
+                        });
+                        if (columnsChanged) {
+                            return { ...page, columns: updatedColumns };
+                        }
+                    } else {
+                        // Si pas de colonnes définies, on assigne les colonnes par défaut qui ont déjà le bon titre
+                        configChanged = true;
+                        return { ...page, columns: defaultColumns };
+                    }
+                    return page;
+                });
 
                 const firestorePageIds = new Set(firestorePages.map(p => p.id));
                 const missingPages = initialPages.filter(p => !firestorePageIds.has(p.id));
