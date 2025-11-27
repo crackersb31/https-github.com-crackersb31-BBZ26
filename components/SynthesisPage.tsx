@@ -1,7 +1,7 @@
 
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../firebase-config';
-import { doc, getDoc } from 'firebase/firestore';
 import { type RowData, type PageConfig } from '../types';
 import { teamMembers } from '../config';
 
@@ -16,6 +16,15 @@ type SortConfig = {
 } | null;
 
 const ITEMS_PER_PAGE = 20;
+
+// Helper pour convertir n'importe quelle entrée en nombre pour le calcul local
+const safeParseFloat = (val: any): number => {
+    if (typeof val === 'number') return val;
+    if (!val) return 0;
+    const cleanStr = String(val).replace(/,/g, '.').replace(/[\s\u00A0]/g, '');
+    const num = parseFloat(cleanStr);
+    return isNaN(num) ? 0 : num;
+};
 
 const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) => {
   const [aggregatedData, setAggregatedData] = useState<RowData[]>([]);
@@ -56,10 +65,10 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
       setError(null);
       try {
         const allPromises = pageConfigs.map(async (config) => {
-          const docRef = doc(db, 'pagesData', config.storageKey);
-          const docSnap = await getDoc(docRef);
-          if (docSnap.exists()) {
-            return docSnap.data().rows as RowData[];
+          const docRef = db.collection('pagesData').doc(config.storageKey);
+          const docSnap = await docRef.get();
+          if (docSnap.exists) {
+            return docSnap.data()?.rows as RowData[];
           }
           return config.initialData as RowData[];
         });
@@ -72,11 +81,11 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
           if (!row || !row.thematique) return;
           const existingRow = aggregationMap.get(row.thematique);
           if (existingRow) {
-            existingRow.contributions = existingRow.contributions.map((c, i) => Number(c) + (Number(row.contributions[i]) || 0));
+            existingRow.contributions = existingRow.contributions.map((c, i) => safeParseFloat(c) + safeParseFloat(row.contributions[i]));
           } else {
             // Ensure existing contributions are also numbers
             const newRow = JSON.parse(JSON.stringify(row));
-            newRow.contributions = newRow.contributions.map((c: any) => Number(c) || 0);
+            newRow.contributions = newRow.contributions.map((c: any) => safeParseFloat(c));
             aggregationMap.set(row.thematique, newRow);
           }
         });
@@ -104,11 +113,11 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
         const origineMatch = filters.origine === 'all' ? true : row.origine === filters.origine;
         const difficulteMatch = filters.difficulte === 'all' ? true : row.difficulte === filters.difficulte;
         const natureMatch = filters.nature === 'all' ? true : row.nature === filters.nature;
-        const contributionMatch = filters.contribution !== null ? (Number(row.contributions[filters.contribution]) || 0) > 0 : true;
+        const contributionMatch = filters.contribution !== null ? (safeParseFloat(row.contributions[filters.contribution])) > 0 : true;
         
         let hideEmptyMatch = true;
         if (hideEmptyRows) {
-            const total = row.contributions.reduce((sum, c) => sum + (Number(c) || 0), 0);
+            const total = row.contributions.reduce((sum, c) => sum + safeParseFloat(c), 0);
             if (total === 0) hideEmptyMatch = false;
         }
 
@@ -119,12 +128,12 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
       data.sort((a, b) => {
         let aValue, bValue;
         if (sortConfig.key === 'total') {
-            aValue = a.contributions.reduce((s, c) => s + (Number(c) || 0), 0);
-            bValue = b.contributions.reduce((s, c) => s + (Number(c) || 0), 0);
+            aValue = a.contributions.reduce((s, c) => s + safeParseFloat(c), 0);
+            bValue = b.contributions.reduce((s, c) => s + safeParseFloat(c), 0);
         } else if (String(sortConfig.key).startsWith('contrib_')) {
             const index = parseInt(String(sortConfig.key).split('_')[1]);
-            aValue = Number(a.contributions[index]) || 0;
-            bValue = Number(b.contributions[index]) || 0;
+            aValue = safeParseFloat(a.contributions[index]);
+            bValue = safeParseFloat(b.contributions[index]);
         } else {
             aValue = a[sortConfig.key as keyof RowData] as any;
             bValue = b[sortConfig.key as keyof RowData] as any;
@@ -169,7 +178,7 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
       // 1. Filtrer les données pour ne garder que celles avec un Total > 0
       // On se base sur les données déjà filtrées par l'utilisateur (recherche, etc.)
       const dataToExport = sortedAndFilteredData.filter(row => {
-         const total = row.contributions.reduce((a, b) => a + (Number(b)||0), 0);
+         const total = row.contributions.reduce((a, b) => a + safeParseFloat(b), 0);
          return total > 0;
       });
 
@@ -189,7 +198,7 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
       const csvContent = [
         headers.join(";"),
         ...dataToExport.map(row => {
-          const total = row.contributions.reduce((a, b) => a + (Number(b)||0), 0);
+          const total = row.contributions.reduce((a, b) => a + safeParseFloat(b), 0);
           const fields = [
             row.thematique,
             row.synthese,
@@ -197,7 +206,7 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
             row.difficulte,
             row.nature,
             row.estimation,
-            ...teamMembers.map((_, i) => Number(row.contributions[i]) || 0),
+            ...teamMembers.map((_, i) => safeParseFloat(row.contributions[i])),
             total
           ];
           // Échapper les guillemets et envelopper les champs textuels
@@ -383,10 +392,10 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
                     <td className="px-6 py-4 whitespace-nowrap">{row.nature}</td>
                     <td className="px-6 py-4 whitespace-nowrap">{row.estimation}</td>
                     {teamMembers.map((_, i) => (
-                        <td key={i} className="px-6 py-4 text-center">{(Number(row.contributions[i]) || 0).toLocaleString('fr-FR')}</td>
+                        <td key={i} className="px-6 py-4 text-center">{safeParseFloat(row.contributions[i]).toLocaleString('fr-FR')}</td>
                     ))}
                     <td className="px-6 py-4 font-bold text-center">
-                      {row.contributions.reduce((sum, item) => sum + (Number(item) || 0), 0).toLocaleString('fr-FR')}
+                      {row.contributions.reduce((sum, item) => sum + safeParseFloat(item), 0).toLocaleString('fr-FR')}
                     </td>
                   </tr>
                 ))}

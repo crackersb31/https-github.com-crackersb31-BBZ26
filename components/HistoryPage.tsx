@@ -1,7 +1,7 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { type HistoryEntry } from '../types';
 import { db } from '../firebase-config';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 
 interface HistoryPageProps {
   onBack: () => void;
@@ -21,16 +21,18 @@ const HistoryPage: React.FC<HistoryPageProps> = ({ onBack, historyKey }) => {
     const fetchHistory = async () => {
       setLoading(true);
       try {
-        const historyCollectionRef = collection(db, 'history');
-        const q = isGlobalHistory
-          ? query(historyCollectionRef, orderBy("timestamp", "desc"))
-          : query(
-              historyCollectionRef,
-              where("pageKey", "==", historyKey),
-              orderBy("timestamp", "desc")
-            );
+        const historyCollectionRef = db.collection('history');
+        let query;
+
+        if (isGlobalHistory) {
+          query = historyCollectionRef.orderBy("timestamp", "desc");
+        } else {
+          query = historyCollectionRef
+              .where("pageKey", "==", historyKey)
+              .orderBy("timestamp", "desc");
+        }
             
-        const querySnapshot = await getDocs(q);
+        const querySnapshot = await query.get();
         const fetchedHistory: HistoryEntry[] = [];
         querySnapshot.forEach((doc) => {
           fetchedHistory.push(doc.data() as HistoryEntry);

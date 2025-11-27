@@ -2,7 +2,6 @@
 import React, { useState, useEffect } from 'react';
 import { loginCodes, teamMembers } from '../config';
 import { db } from '../firebase-config';
-import { collection, getDocs, writeBatch, doc, getDoc, setDoc, query, orderBy } from 'firebase/firestore';
 import { type RowData, type PageConfig, type AnnouncementConfig, type LoginEntry } from '../types';
 
 interface ConfigurationPageProps {
@@ -67,9 +66,9 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
           const loadAnnouncements = async () => {
               setIsLoading(true);
               try {
-                  const docRef = doc(db, 'appConfig', 'announcements');
-                  const docSnap = await getDoc(docRef);
-                  if (docSnap.exists()) {
+                  const docRef = db.collection('appConfig').doc('announcements');
+                  const docSnap = await docRef.get();
+                  if (docSnap.exists) {
                       setAnnouncementConfig(docSnap.data() as AnnouncementConfig);
                   }
               } catch (error) {
@@ -89,9 +88,9 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
               setIsLoading(true);
               try {
                   // 1. Load connection stats (Logins)
-                  const loginsRef = collection(db, 'logins');
-                  const q = query(loginsRef, orderBy('timestamp', 'desc'));
-                  const snapshot = await getDocs(q);
+                  const loginsRef = db.collection('logins');
+                  const q = loginsRef.orderBy('timestamp', 'desc');
+                  const snapshot = await q.get();
                   
                   const statsMap: Record<string, ConnectionStat> = {};
                   Object.values(loginCodes).forEach(user => {
@@ -123,15 +122,15 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
                   setConnectionStats(sortedStats);
 
                   // 2. Load Pages for Matrix
-                  const pagesRef = doc(db, 'appConfig', 'pages');
-                  const pagesSnap = await getDoc(pagesRef);
-                  if (pagesSnap.exists()) {
-                      setMatrixPages(pagesSnap.data().pageList || []);
+                  const pagesRef = db.collection('appConfig').doc('pages');
+                  const pagesSnap = await pagesRef.get();
+                  if (pagesSnap.exists) {
+                      setMatrixPages(pagesSnap.data()?.pageList || []);
                   }
 
                   // 3. Load Visits for Matrix
-                  const visitsRef = collection(db, 'pageVisits');
-                  const visitsSnap = await getDocs(visitsRef);
+                  const visitsRef = db.collection('pageVisits');
+                  const visitsSnap = await visitsRef.get();
                   const visits: PageVisit[] = [];
                   visitsSnap.forEach(doc => visits.push(doc.data() as PageVisit));
                   setVisitsData(visits);
@@ -150,8 +149,8 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
       setIsLoading(true);
       setAnnouncementSaveStatus('');
       try {
-          const docRef = doc(db, 'appConfig', 'announcements');
-          await setDoc(docRef, announcementConfig);
+          const docRef = db.collection('appConfig').doc('announcements');
+          await docRef.set(announcementConfig);
           setAnnouncementSaveStatus('Sauvegardé avec succès !');
           setTimeout(() => setAnnouncementSaveStatus(''), 3000);
       } catch (error) {
@@ -172,6 +171,59 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
       }));
   };
 
+  // Fonction utilitaire pour nettoyer récursivement les objets avant envoi Firestore
+  // Transforme tous les 'undefined' en 'null'
+  const sanitizeValue = (value: any): any => {
+      if (value === undefined) return null;
+      if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+          const newObj: any = {};
+          Object.keys(value).forEach(key => {
+              newObj[key] = sanitizeValue(value[key]);
+          });
+          return newObj;
+      }
+      if (Array.isArray(value)) {
+          return value.map(sanitizeValue);
+      }
+      return value;
+  };
+
+  const deleteCollection = async (collectionName: string) => {
+      try {
+          console.log(`Début suppression collection : ${collectionName}`);
+          const collectionRef = db.collection(collectionName);
+          let totalDeleted = 0;
+          
+          // Boucle while pour supprimer par lots tant qu'il reste des documents
+          // eslint-disable-next-line no-constant-condition
+          while (true) {
+              const q = collectionRef.limit(400); // Marge de sécurité sous la limite de 500
+              const snapshot = await q.get();
+              
+              if (snapshot.empty) {
+                  break;
+              }
+              
+              const batch = db.batch();
+              snapshot.docs.forEach((doc) => {
+                  batch.delete(doc.ref);
+              });
+              
+              await batch.commit();
+              totalDeleted += snapshot.size;
+              console.log(`Supprimé ${snapshot.size} documents de ${collectionName} (Total: ${totalDeleted})...`);
+              
+              // Petite pause pour ne pas surcharger le navigateur ou la connexion
+              await new Promise(resolve => setTimeout(resolve, 200));
+          }
+          
+          return totalDeleted;
+      } catch (e) {
+          console.error(`Erreur suppression collection ${collectionName}`, e);
+          throw e;
+      }
+  };
+
   const handleResetHistoryAndLogs = async () => {
     if (!window.confirm("ATTENTION : Êtes-vous sûr de vouloir supprimer TOUT l'historique des modifications et TOUS les journaux de connexion ?\n\nCette action est irréversible. Les statistiques 'Utilisateurs actifs' seront remises à zéro.")) {
         return;
@@ -179,45 +231,17 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
 
     setIsLoading(true);
     try {
-        const batchSize = 500;
+        await deleteCollection('history');
+        await deleteCollection('logins');
+        await deleteCollection('pageVisits');
         
-        const historyRef = collection(db, 'history');
-        const historySnapshot = await getDocs(historyRef);
-        const historyDocs = historySnapshot.docs;
-        
-        for (let i = 0; i < historyDocs.length; i += batchSize) {
-            const batch = writeBatch(db);
-            const chunk = historyDocs.slice(i, i + batchSize);
-            chunk.forEach(doc => batch.delete(doc.ref));
-            await batch.commit();
-        }
-
-        const loginsRef = collection(db, 'logins');
-        const loginsSnapshot = await getDocs(loginsRef);
-        const loginsDocs = loginsSnapshot.docs;
-
-        for (let i = 0; i < loginsDocs.length; i += batchSize) {
-            const batch = writeBatch(db);
-            const chunk = loginsDocs.slice(i, i + batchSize);
-            chunk.forEach(doc => batch.delete(doc.ref));
-            await batch.commit();
-        }
-
-        // Reset also visits tracking
-        const visitsRef = collection(db, 'pageVisits');
-        const visitsSnapshot = await getDocs(visitsRef);
-        const visitsDocs = visitsSnapshot.docs;
-        for (let i = 0; i < visitsDocs.length; i += batchSize) {
-            const batch = writeBatch(db);
-            const chunk = visitsDocs.slice(i, i + batchSize);
-            chunk.forEach(doc => batch.delete(doc.ref));
-            await batch.commit();
-        }
-
-        alert("Succès : L'historique et les journaux de connexion ont été entièrement effacés.");
+        alert("Succès : L'historique et les journaux ont été effacés.");
+        // Réinitialisation des états locaux pour refléter le changement
+        setConnectionStats([]);
+        setVisitsData([]);
     } catch (error) {
-        console.error("Erreur lors de la réinitialisation :", error);
-        alert("Une erreur est survenue lors de la suppression.");
+        console.error("Erreur générale lors de la réinitialisation :", error);
+        alert("Une erreur est survenue lors de la suppression. Vérifiez la console.");
     } finally {
         setIsLoading(false);
     }
@@ -234,36 +258,52 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
 
       setIsLoading(true);
       try {
-          const pagesConfigRef = doc(db, 'appConfig', 'pages');
-          const pagesConfigSnap = await getDoc(pagesConfigRef);
+          const pagesConfigRef = db.collection('appConfig').doc('pages');
+          const pagesConfigSnap = await pagesConfigRef.get();
           
-          if (!pagesConfigSnap.exists()) {
+          if (!pagesConfigSnap.exists) {
               throw new Error("Configuration introuvable");
           }
           
-          const pages: PageConfig[] = pagesConfigSnap.data().pageList;
-          const batch = writeBatch(db);
-          
+          const pages: PageConfig[] = pagesConfigSnap.data()?.pageList;
+          let successCount = 0;
+          let failCount = 0;
+
+          // TRAITEMENT SÉQUENTIEL (TABLEAU APRÈS TABLEAU)
           for (const page of pages) {
-              const pageRef = doc(db, 'pagesData', page.storageKey);
-              const pageSnap = await getDoc(pageRef);
-              
-              if (pageSnap.exists()) {
-                  const rows = pageSnap.data().rows as RowData[];
-                  const updatedRows = rows.map(row => ({
-                      ...row,
-                      contributions: Array(teamMembers.length).fill(0)
-                  }));
-                  batch.set(pageRef, { rows: updatedRows });
+              try {
+                  console.log(`Traitement du tableau : ${page.title} (${page.id})`);
+                  const pageRef = db.collection('pagesData').doc(page.storageKey);
+                  const pageSnap = await pageRef.get();
+
+                  if (pageSnap.exists) {
+                      const data = pageSnap.data();
+                      const rows = data ? (data.rows as RowData[]) : [];
+                      
+                      const updatedRows = rows.map(row => {
+                          const cleanRow = sanitizeValue(row);
+                          return {
+                              ...cleanRow,
+                              domainTag: cleanRow.domainTag || null,
+                              domainResponse: cleanRow.domainResponse || null,
+                              contributions: Array(teamMembers.length).fill(0)
+                          };
+                      });
+                      
+                      await pageRef.set({ rows: updatedRows });
+                      successCount++;
+                  }
+              } catch (err) {
+                  console.error(`Echec pour le tableau ${page.title}`, err);
+                  failCount++;
               }
           }
           
-          await batch.commit();
-          alert("Succès : Toutes les contributions ont été remises à zéro.");
+          alert(`Opération terminée.\nTableaux réinitialisés : ${successCount}\nÉchecs : ${failCount}`);
 
       } catch (error) {
           console.error("Erreur lors de la remise à zéro des contributions :", error);
-          alert("Une erreur est survenue.");
+          alert("Erreur technique : " + (error instanceof Error ? error.message : "Inconnue"));
       } finally {
           setIsLoading(false);
       }
@@ -709,7 +749,7 @@ const ConfigurationPage: React.FC<ConfigurationPageProps> = ({ onBack, currentUs
                              disabled={isLoading}
                              className="px-4 py-2 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 disabled:opacity-50 shadow-md"
                         >
-                            {isLoading ? "Traitement en cours..." : "EFFACER TOUS LES CHIFFRES (Contribs à 0)"}
+                            {isLoading ? "Traitement en cours (Tableau après Tableau)..." : "EFFACER TOUS LES CHIFFRES (Contribs à 0)"}
                         </button>
                     </div>
                 </div>

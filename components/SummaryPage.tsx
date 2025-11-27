@@ -1,7 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase-config';
-import { collection, getDocs, query, orderBy, limit, doc, getDoc } from 'firebase/firestore';
 import { type PageConfig, type LoginEntry } from '../types';
 import { teamMembers } from '../config';
 import ConfigurationPage from './ConfigurationPage';
@@ -26,7 +25,34 @@ interface StatItem {
     value: string | number;
     subtext?: string;
     colorClass?: string;
+    rawValue?: number; // Added for sorting
 }
+
+// Fonction utilitaire robuste pour convertir n'importe quelle entrée en nombre
+const safeParseFloat = (val: any): number => {
+    if (typeof val === 'number') return val;
+    if (val === null || val === undefined) return 0;
+    
+    // 1. Conversion en chaîne
+    let str = String(val);
+    
+    // 2. Nettoyage agressif : on supprime tous les espaces (classiques, insécables, tabulations)
+    // \s correspond aux espaces standards
+    // \u00A0 est l'espace insécable classique
+    // \u2007 est l'espace tabulaire
+    // \u202F est l'espace fine insécable
+    str = str.replace(/\s/g, '').replace(/[\u00A0\u2007\u202F]/g, '');
+    
+    if (str.trim() === '') return 0;
+
+    // 3. Normalisation : on remplace la virgule par un point
+    str = str.replace(',', '.');
+    
+    // 4. On ne garde que les caractères numériques valides (chiffres, point, signe moins)
+    const num = parseFloat(str);
+    
+    return isNaN(num) ? 0 : num;
+};
 
 // Configuration des icônes par titre de page
 const iconComponents: Record<string, React.ReactNode> = {
@@ -224,13 +250,11 @@ const SummaryPage: React.FC<SummaryPageProps> = ({
   const [finishedStats, setFinishedStats] = useState<StatItem[]>([]);
   const [loadingStats, setLoadingStats] = useState(true);
 
-  // État pour les onglets majeurs
   const [activeTab, setActiveTab] = useState<'saisie' | 'pilotage' | 'configuration'>('saisie');
 
   // --- KEYBOARD NAVIGATION FOR TABS ---
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-        // Ignorer si l'utilisateur est en train de taper dans un champ
         const activeElement = document.activeElement as HTMLElement;
         if (activeElement && (activeElement.tagName === 'INPUT' || activeElement.tagName === 'TEXTAREA' || activeElement.tagName === 'SELECT')) {
             return;
@@ -251,7 +275,6 @@ const SummaryPage: React.FC<SummaryPageProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeTab]);
-  // ------------------------------------
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -261,16 +284,15 @@ const SummaryPage: React.FC<SummaryPageProps> = ({
       }
 
       try {
-        // 1. Récupérer les utilisateurs actifs (Logins)
-        const loginsRef = collection(db, 'logins');
-        // On récupère tout pour filtrer en JS car 'limit' s'applique avant le filtrage distinct
-        const qLogins = query(loginsRef, orderBy('timestamp', 'desc')); 
-        const loginSnaps = await getDocs(qLogins);
+        // 1. Récupérer les utilisateurs actifs
+        const loginsRef = db.collection('logins');
+        const qLogins = loginsRef.orderBy('timestamp', 'desc'); 
+        const loginSnaps = await qLogins.get();
         
         const userCounts: Record<string, number> = {};
         loginSnaps.forEach(doc => {
             const data = doc.data() as LoginEntry;
-            if (data.user && data.user !== 'ADMIN') { // Exclure l'admin
+            if (data.user && data.user !== 'ADMIN') {
                 userCounts[data.user] = (userCounts[data.user] || 0) + 1;
             }
         });
@@ -286,38 +308,56 @@ const SummaryPage: React.FC<SummaryPageProps> = ({
         setActiveUsersStats(sortedUsers);
 
         // 2. Récupérer le volume des contributions
-        // On a besoin de la liste des storageKeys
+        // Initialiser avec la longueur exacte de teamMembers importé de config
+        // teamMembers = ['DCOM', 'DRH', 'SST', 'DC', 'DF', 'DT', 'GEH AG', 'GEH AA', 'GEH TA', 'GMH']
         let globalSums = new Array(teamMembers.length).fill(0);
         
         const docReads = pages.map(p => {
-             const ref = doc(db, 'pagesData', p.storageKey);
-             return getDoc(ref);
+             const ref = db.collection('pagesData').doc(p.storageKey);
+             return ref.get();
         });
         
         const docs = await Promise.all(docReads);
         
         docs.forEach(d => {
-            if (d.exists()) {
-                const rows = d.data().rows || [];
+            if (d.exists) {
+                const rows = d.data()?.rows || [];
                 rows.forEach((r: any) => {
                     if (r.contributions && Array.isArray(r.contributions)) {
+                        // Utiliser l'index pour mapper strictement à teamMembers
+                        // index 0 dans contributions => correspond à teamMembers[0] (DCOM)
                         r.contributions.forEach((val: any, idx: number) => {
-                            globalSums[idx] += (Number(val) || 0);
+                             if (idx < globalSums.length) {
+                                const amount = safeParseFloat(val);
+                                globalSums[idx] += amount;
+                             }
                         });
                     }
                 });
             }
         });
 
+        // Construction des stats pour affichage
         const sortedContributions = teamMembers
-            .map((tm, idx) => ({
-                label: tm,
-                value: globalSums[idx] > 0 ? (globalSums[idx] / 1000).toFixed(1) + ' k€' : '0',
-                rawValue: globalSums[idx]
-            }))
-            .filter(item => item.label !== 'ADMIN') // Exclure l'admin
-            .sort((a, b) => b.rawValue - a.rawValue)
-            .map(item => ({ label: item.label, value: item.value }));
+            .map((tm, idx) => {
+                // On utilise la somme correspondant à l'index du membre de l'équipe
+                const valueInKeuros = globalSums[idx];
+                
+                // Formatage cohérent (ex: "12,5 k€" ou "0,0 k€")
+                const formattedValue = valueInKeuros.toLocaleString('fr-FR', {
+                    minimumFractionDigits: 1,
+                    maximumFractionDigits: 1
+                }) + ' k€';
+
+                return {
+                    label: tm,
+                    value: formattedValue,
+                    rawValue: valueInKeuros
+                };
+            })
+            .filter(item => item.label !== 'ADMIN') // Exclure ADMIN s'il est présent (sécurité)
+            .sort((a, b) => b.rawValue - a.rawValue) // Trier du plus grand au plus petit
+            .map(item => ({ label: item.label, value: item.value, rawValue: item.rawValue }));
 
         setContributionStats(sortedContributions);
 
@@ -325,7 +365,7 @@ const SummaryPage: React.FC<SummaryPageProps> = ({
         const finishedList = pages
             .filter(p => p.isFinished)
             .map(p => ({
-                label: p.title.replace('Remontée ', ''), // Simplifier le nom
+                label: p.title.replace('Remontée ', ''),
                 value: 'Validé',
                 colorClass: 'text-green-600 font-bold bg-green-50 px-2 py-0.5 rounded'
             }));
@@ -341,7 +381,6 @@ const SummaryPage: React.FC<SummaryPageProps> = ({
     fetchStats();
   }, [isAdmin, pages]);
 
-  // Group pages by section
   const subUnitPages = pages.filter(p => {
       const t = p.title.toUpperCase();
       return t.includes('GEH') || t.includes('GMH');
@@ -349,7 +388,6 @@ const SummaryPage: React.FC<SummaryPageProps> = ({
 
   const staffPages = pages.filter(p => {
       const t = p.title.toUpperCase();
-      // On exclut les GEH/GMH, mais aussi explicitement 'Fiches transverses' car elle est gérée à part via le widget
       return !t.includes('GEH') && !t.includes('GMH') && p.title !== 'Fiches transverses';
   });
 
@@ -422,7 +460,6 @@ const SummaryPage: React.FC<SummaryPageProps> = ({
       {/* CONTENU : ESPACE SAISIE */}
       {activeTab === 'saisie' && (
         <div className="animate-fade-in-up">
-            {/* SECTION 1: Remontée Sous Unité */}
             <section className="mb-10">
                 <div className="flex items-center gap-3 mb-6">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
@@ -441,14 +478,12 @@ const SummaryPage: React.FC<SummaryPageProps> = ({
                 </div>
             </section>
 
-            {/* SECTION 2: Etat Major Unité */}
             <section className="mb-10">
                 <div className="flex items-center gap-3 mb-6">
                     <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>
                     <h2 className="text-xl font-bold text-slate-800">Etat Major Unité</h2>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-                    {/* 1. Carte Spéciale "Domaines transverses" */}
                     <div 
                         onClick={onSelectTransverseDomains}
                         className="group relative bg-orange-50/80 backdrop-blur-md rounded-3xl p-6 shadow-sm hover:shadow-xl transition-all duration-300 border border-orange-100/50 cursor-pointer group-hover:border-orange-300 hover:-translate-y-1"
@@ -465,7 +500,6 @@ const SummaryPage: React.FC<SummaryPageProps> = ({
                         </h3>
                     </div>
 
-                    {/* 2. Autres cartes dynamiques */}
                     {staffPages.map((page) => (
                         <PageCard 
                             key={page.id} 
@@ -483,7 +517,6 @@ const SummaryPage: React.FC<SummaryPageProps> = ({
       {/* CONTENU : ESPACE PILOTAGE */}
       {activeTab === 'pilotage' && (
         <div className="animate-fade-in-up">
-            {/* Admin Dashboard Widgets */}
             {isAdmin && (
                 <section className="mb-12">
                      <div className="flex items-center gap-3 mb-6">
@@ -498,7 +531,7 @@ const SummaryPage: React.FC<SummaryPageProps> = ({
                             emptyMsg="Aucune connexion récente"
                         />
                         <AdminWidget 
-                            title="Volume des Contributions" 
+                            title="Volume des Contributions (Total k€)" 
                             stats={contributionStats} 
                             loading={loadingStats} 
                             emptyMsg="Aucune contribution"
@@ -513,14 +546,12 @@ const SummaryPage: React.FC<SummaryPageProps> = ({
                 </section>
             )}
 
-            {/* SECTION 3: Outils */}
             <section className="mb-12">
                 <div className="flex items-center gap-3 mb-6">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                     <h2 className="text-xl font-bold text-slate-800">Outils d'Analyse</h2>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                    {/* Carte Synthèse par Utilisateur (Pour tout le monde) */}
                     <ToolCard
                         title="Synthèse par Utilisateur"
                         desc="Vue consolidée par métier"
@@ -528,8 +559,6 @@ const SummaryPage: React.FC<SummaryPageProps> = ({
                         icon={<svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>}
                         onClick={onSelectUserSynthesis}
                     />
-                    
-                    {/* NOTE: Configuration & Aide a été déplacé dans son propre onglet */}
 
                     {isAdmin && (
                         <>
@@ -568,7 +597,6 @@ const SummaryPage: React.FC<SummaryPageProps> = ({
         </div>
       )}
 
-      {/* CONTENU : AIDE & CONFIGURATION */}
       {activeTab === 'configuration' && (
           <div className="animate-fade-in-up">
               <ConfigurationPage onBack={() => setActiveTab('saisie')} currentUser={currentUser} />

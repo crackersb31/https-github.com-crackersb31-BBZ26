@@ -18,7 +18,6 @@ import { INITIAL_DATA_GEH_AG_PAGE as page3Data } from './data-geh-ag-page';
 import { INITIAL_DATA_GMH as page4Data } from './data-gmh';
 import { type PageConfig, type LoginEntry, type Column, type RowData, type AnnouncementConfig } from './types';
 import { db } from './firebase-config';
-import { doc, setDoc, getDoc, collection, writeBatch, query, where, getDocs } from 'firebase/firestore';
 
 const initialPages: PageConfig[] = [
   {
@@ -149,8 +148,8 @@ const performPageDeletion = async (pages: PageConfig[], pageId: string) => {
     const updatedPages = pages.filter(p => p.id !== pageId);
 
     try {
-        const historyCollectionRef = collection(db, 'history');
-        const historySnapshot = await getDocs(historyCollectionRef);
+        const historyCollectionRef = db.collection('history');
+        const historySnapshot = await historyCollectionRef.get();
         const historyDocsToDelete = historySnapshot.docs.filter(doc => doc.data().pageKey === historyKey);
 
         if (historyDocsToDelete.length > 0) {
@@ -161,7 +160,7 @@ const performPageDeletion = async (pages: PageConfig[], pageId: string) => {
             }
 
             for (const chunk of chunks) {
-                const historyBatch = writeBatch(db);
+                const historyBatch = db.batch();
                 chunk.forEach((doc) => {
                     historyBatch.delete(doc.ref);
                 });
@@ -169,10 +168,10 @@ const performPageDeletion = async (pages: PageConfig[], pageId: string) => {
             }
         }
 
-        const finalBatch = writeBatch(db);
-        const pagesConfigDocRef = doc(db, 'appConfig', 'pages');
+        const finalBatch = db.batch();
+        const pagesConfigDocRef = db.collection('appConfig').doc('pages');
         finalBatch.set(pagesConfigDocRef, { pageList: updatedPages });
-        const pageDataDocRef = doc(db, 'pagesData', storageKey);
+        const pageDataDocRef = db.collection('pagesData').doc(storageKey);
         finalBatch.delete(pageDataDocRef);
         await finalBatch.commit();
         
@@ -195,11 +194,11 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const fetchPagesConfig = async () => {
-        const docRef = doc(db, 'appConfig', 'pages');
+        const docRef = db.collection('appConfig').doc('pages');
         try {
-            const docSnap = await getDoc(docRef);
-            if (docSnap.exists() && docSnap.data().pageList) {
-                let firestorePages: PageConfig[] = docSnap.data().pageList;
+            const docSnap = await docRef.get();
+            if (docSnap.exists && docSnap.data()?.pageList) {
+                let firestorePages: PageConfig[] = docSnap.data()!.pageList;
                 let configChanged = false;
 
                 const newTitle = "Fiches transverses";
@@ -259,13 +258,13 @@ const App: React.FC = () => {
 
                 if (missingPages.length > 0 || configChanged) {
                     const updatedPages = [...firestorePages, ...missingPages];
-                    await setDoc(docRef, { pageList: updatedPages });
+                    await docRef.set({ pageList: updatedPages });
                     setPages(updatedPages);
                 } else {
                     setPages(firestorePages);
                 }
             } else {
-                await setDoc(docRef, { pageList: initialPages });
+                await docRef.set({ pageList: initialPages });
                 setPages(initialPages);
             }
         } catch (error) {
@@ -287,18 +286,18 @@ const App: React.FC = () => {
           user,
           timestamp: new Date().toISOString(),
         };
-        const loginCollectionRef = collection(db, 'logins');
-        await setDoc(doc(loginCollectionRef), loginEntry);
+        const loginCollectionRef = db.collection('logins');
+        await loginCollectionRef.add(loginEntry);
       } catch (error) {
         console.error("Erreur lors de l'enregistrement de la connexion", error);
       }
 
       // Check for announcements
       try {
-          const announcementRef = doc(db, 'appConfig', 'announcements');
-          const announcementSnap = await getDoc(announcementRef);
+          const announcementRef = db.collection('appConfig').doc('announcements');
+          const announcementSnap = await announcementRef.get();
           
-          if (announcementSnap.exists()) {
+          if (announcementSnap.exists) {
               const config = announcementSnap.data() as AnnouncementConfig;
               if (config.isActive) {
                   let messageToShow = '';
@@ -399,8 +398,8 @@ const App: React.FC = () => {
     };
     
     try {
-        const docRef = doc(db, 'appConfig', 'pages');
-        await setDoc(docRef, { pageList: updatedPages });
+        const docRef = db.collection('appConfig').doc('pages');
+        await docRef.set({ pageList: updatedPages });
         setPages(updatedPages);
     } catch (error) {
         console.error("Erreur lors de la mise à jour de la configuration de la page", error);
@@ -422,8 +421,8 @@ const App: React.FC = () => {
     setPages(updatedPages);
 
     try {
-        const docRef = doc(db, 'appConfig', 'pages');
-        await setDoc(docRef, { pageList: updatedPages });
+        const docRef = db.collection('appConfig').doc('pages');
+        await docRef.set({ pageList: updatedPages });
     } catch (error) {
         console.error("Erreur lors de la mise à jour du statut du tableau", error);
         // Revert on error if needed, but simpler to just log for now in this context

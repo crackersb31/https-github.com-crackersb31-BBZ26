@@ -1,10 +1,10 @@
 
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { type RowData, type HistoryEntry, type PageConfig, type Column } from '../types';
 import { teamMembers, defaultColumns, difficultyOptions } from '../config';
 import HistoryPage from './HistoryPage';
 import { db } from '../firebase-config';
-import { doc, getDoc, setDoc, writeBatch, collection } from 'firebase/firestore';
 
 interface TablePageProps {
   currentUser: string;
@@ -39,6 +39,15 @@ const TAG_TO_USER_MAP: Record<string, string> = {
     'DT': 'DT',
     'DF': 'DF',
     'SST': 'SST'
+};
+
+// Helper pour convertir n'importe quelle entrée en nombre pour le calcul local
+const safeParseFloat = (val: any): number => {
+    if (typeof val === 'number') return val;
+    if (!val) return 0;
+    const cleanStr = String(val).replace(/,/g, '.').replace(/[\s\u00A0]/g, '');
+    const num = parseFloat(cleanStr);
+    return isNaN(num) ? 0 : num;
 };
 
 const TablePage: React.FC<TablePageProps> = ({
@@ -104,11 +113,11 @@ const TablePage: React.FC<TablePageProps> = ({
 
         try {
             // ID composite unique par Utilisateur et par Page pour éviter les doublons de lignes
-            // Cela permet de mettre à jour le timestamp de la "Dernière visite"
+            // Cela permet de mettre à jour la date de "Dernière visite"
             const visitId = `${currentUser}_${pageId}`;
-            const visitRef = doc(db, 'pageVisits', visitId);
+            const visitRef = db.collection('pageVisits').doc(visitId);
             
-            await setDoc(visitRef, {
+            await visitRef.set({
                 user: currentUser,
                 pageId: pageId,
                 pageTitle: title,
@@ -153,11 +162,11 @@ const TablePage: React.FC<TablePageProps> = ({
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true);
-      const docRef = doc(db, 'pagesData', storageKey);
+      const docRef = db.collection('pagesData').doc(storageKey);
       try {
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-          const loadedData = (docSnap.data().rows as RowData[]).map(row => ({
+        const docSnap = await docRef.get();
+        if (docSnap.exists) {
+          const loadedData = (docSnap.data()?.rows as RowData[]).map(row => ({
             ...row,
             comments: row.comments || {},
             estimationComment: row.estimationComment || '',
@@ -184,7 +193,7 @@ const TablePage: React.FC<TablePageProps> = ({
           setData(initialDataTyped);
           setInitialDataSnapshot(JSON.parse(JSON.stringify(initialDataTyped)));
           if (initialDataTyped.length > 0) {
-             await setDoc(docRef, { rows: initialDataTyped });
+             await docRef.set({ rows: initialDataTyped });
           }
         }
       } catch (error) {
@@ -246,12 +255,7 @@ const TablePage: React.FC<TablePageProps> = ({
         domainTag: row.domainTag || null,
         domainResponse: row.domainResponse || null,
         contributions: row.contributions.map(val => {
-            if (typeof val === 'string') {
-                // Remplacer virgule par point et convertir
-                const num = parseFloat(val.replace(',', '.'));
-                return isNaN(num) ? 0 : num;
-            }
-            return val;
+            return safeParseFloat(val);
         })
     }));
 
@@ -354,15 +358,15 @@ const TablePage: React.FC<TablePageProps> = ({
     }
 
     try {
-      const batch = writeBatch(db);
-      const pageDocRef = doc(db, 'pagesData', storageKey);
+      const batch = db.batch();
+      const pageDocRef = db.collection('pagesData').doc(storageKey);
       batch.set(pageDocRef, { rows: dataToSave });
       
       if (changes.length > 0) {
-        const historyCollectionRef = collection(db, 'history');
+        const historyCollectionRef = db.collection('history');
         changes.forEach(change => {
           const newHistoryEntry: HistoryEntry = { ...change, timestamp };
-          const historyDocRef = doc(historyCollectionRef);
+          const historyDocRef = historyCollectionRef.doc(); // Auto-ID
           batch.set(historyDocRef, { ...newHistoryEntry, pageKey: historyKey });
         });
       }
@@ -1027,7 +1031,7 @@ const TablePage: React.FC<TablePageProps> = ({
                       </td>
                     )})}
                     <td className="px-6 py-4 font-bold text-center">
-                      {(row.contributions || []).reduce((sum, item) => sum + (Number(item) || 0), 0).toLocaleString('fr-FR')}
+                      {(row.contributions || []).reduce((sum, item) => sum + safeParseFloat(item), 0).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                     </td>
                      <td className="px-6 py-4 text-center">
                         <button onClick={() => handleOpenCommentModal(rowIndex)} className="relative py-1 px-3 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">

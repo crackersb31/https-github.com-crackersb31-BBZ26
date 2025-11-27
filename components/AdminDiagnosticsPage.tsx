@@ -1,6 +1,6 @@
+
 import React, { useState, useEffect } from 'react';
 import { db } from '../firebase-config';
-import { doc, getDoc } from 'firebase/firestore';
 import { type PageConfig } from '../types';
 
 interface AdminDiagnosticsPageProps {
@@ -18,10 +18,10 @@ const AdminDiagnosticsPage: React.FC<AdminDiagnosticsPageProps> = ({ onBack }) =
       setLoading(true);
       setError(null);
       try {
-        const docRef = doc(db, 'appConfig', 'pages');
-        const docSnap = await getDoc(docRef);
-        if (docSnap.exists() && docSnap.data().pageList) {
-          setConfigData(docSnap.data().pageList);
+        const docRef = db.collection('appConfig').doc('pages');
+        const docSnap = await docRef.get();
+        if (docSnap.exists && docSnap.data()?.pageList) {
+          setConfigData(docSnap.data()!.pageList);
         } else {
           setError("Le document de configuration des pages est introuvable dans Firestore.");
         }

@@ -1,5 +1,6 @@
-import { initializeApp } from "firebase/app";
-import { getFirestore } from "firebase/firestore";
+
+import firebase from "firebase/compat/app";
+import "firebase/compat/firestore";
 
 // --- IMPORTANT ---
 // Remplacez cet objet par la configuration de votre propre projet Firebase.
@@ -14,8 +15,8 @@ const firebaseConfig = {
   appId: "1:267533151391:web:c8c5a25ca605e58b0906aa"
 };
 
-// Initialise Firebase
-const app = initializeApp(firebaseConfig);
+// Initialise Firebase with Compat API
+const app = firebase.initializeApp(firebaseConfig);
 
-// Exporte l'instance de la base de données Firestore
-export const db = getFirestore(app);
+// Exporte l'instance de la base de données Firestore (Compat)
+export const db = app.firestore();
