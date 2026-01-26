@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../firebase-config';
 import { type RowData, type PageConfig } from '../types';
@@ -81,7 +82,8 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
           if (!row || !row.thematique) return;
           const existingRow = aggregationMap.get(row.thematique);
           if (existingRow) {
-            existingRow.contributions = existingRow.contributions.map((c, i) => safeParseFloat(c) + safeParseFloat(row.contributions[i]));
+            // FIX: Ensure addition is between numbers
+            existingRow.contributions = existingRow.contributions.map((c, i) => (safeParseFloat(c) as number) + (safeParseFloat(row.contributions[i]) as number));
           } else {
             // Ensure existing contributions are also numbers
             const newRow = JSON.parse(JSON.stringify(row));
@@ -117,7 +119,8 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
         
         let hideEmptyMatch = true;
         if (hideEmptyRows) {
-            const total = row.contributions.reduce((sum, c) => sum + safeParseFloat(c), 0);
+            // FIX: Add explicit type to reduce to fix '+' operator error
+            const total = row.contributions.reduce<number>((sum, c) => sum + safeParseFloat(c), 0);
             if (total === 0) hideEmptyMatch = false;
         }
 
@@ -128,8 +131,9 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
       data.sort((a, b) => {
         let aValue, bValue;
         if (sortConfig.key === 'total') {
-            aValue = a.contributions.reduce((s, c) => s + safeParseFloat(c), 0);
-            bValue = b.contributions.reduce((s, c) => s + safeParseFloat(c), 0);
+            // FIX: Add explicit type to reduce to fix '+' operator error
+            aValue = a.contributions.reduce<number>((s, c) => s + safeParseFloat(c), 0);
+            bValue = b.contributions.reduce<number>((s, c) => s + safeParseFloat(c), 0);
         } else if (String(sortConfig.key).startsWith('contrib_')) {
             const index = parseInt(String(sortConfig.key).split('_')[1]);
             aValue = safeParseFloat(a.contributions[index]);
@@ -178,7 +182,8 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
       // 1. Filtrer les données pour ne garder que celles avec un Total > 0
       // On se base sur les données déjà filtrées par l'utilisateur (recherche, etc.)
       const dataToExport = sortedAndFilteredData.filter(row => {
-         const total = row.contributions.reduce((a, b) => a + safeParseFloat(b), 0);
+         // FIX: Add explicit type to reduce to fix '+' operator error
+         const total = row.contributions.reduce<number>((a, b) => a + safeParseFloat(b), 0);
          return total > 0;
       });
 
@@ -198,7 +203,8 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
       const csvContent = [
         headers.join(";"),
         ...dataToExport.map(row => {
-          const total = row.contributions.reduce((a, b) => a + safeParseFloat(b), 0);
+          // FIX: Add explicit type to reduce to fix '+' operator error
+          const total = row.contributions.reduce<number>((a, b) => a + safeParseFloat(b), 0);
           const fields = [
             row.thematique,
             row.synthese,
@@ -395,7 +401,8 @@ const SynthesisPage: React.FC<SynthesisPageProps> = ({ onBack, pageConfigs }) =>
                         <td key={i} className="px-6 py-4 text-center">{safeParseFloat(row.contributions[i]).toLocaleString('fr-FR')}</td>
                     ))}
                     <td className="px-6 py-4 font-bold text-center">
-                      {row.contributions.reduce((sum, item) => sum + safeParseFloat(item), 0).toLocaleString('fr-FR')}
+                      {/* FIX: Add explicit type to reduce to fix '+' operator error */}
+                      {row.contributions.reduce<number>((sum, item) => sum + safeParseFloat(item), 0).toLocaleString('fr-FR')}
                     </td>
                   </tr>
                 ))}

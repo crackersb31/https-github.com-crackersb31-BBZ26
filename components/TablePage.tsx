@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { type RowData, type HistoryEntry, type PageConfig, type Column } from '../types';
 import { teamMembers, defaultColumns, difficultyOptions } from '../config';
@@ -365,9 +366,9 @@ const TablePage: React.FC<TablePageProps> = ({
       if (changes.length > 0) {
         const historyCollectionRef = db.collection('history');
         changes.forEach(change => {
-          const newHistoryEntry: HistoryEntry = { ...change, timestamp };
+          const newHistoryEntry: HistoryEntry = { ...change, timestamp, pageKey: historyKey || 'N/A' };
           const historyDocRef = historyCollectionRef.doc(); // Auto-ID
-          batch.set(historyDocRef, { ...newHistoryEntry, pageKey: historyKey });
+          batch.set(historyDocRef, newHistoryEntry);
         });
       }
       
@@ -728,8 +729,11 @@ const TablePage: React.FC<TablePageProps> = ({
                     )}
                 </button>
             )}
+            {/* FIX: Use span with title to avoid SVG title prop error */}
             {!isAdmin && row.isLocked && (
-                <svg className="w-5 h-5 text-red-400 flex-shrink-0" title="Cette ligne est verrouillée par l'administrateur" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                <span title="Cette ligne est verrouillée par l'administrateur">
+                    <svg className="w-5 h-5 text-red-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+                </span>
             )}
 
             {/* Bouton Comité (Admin Toggle / User View) */}
@@ -744,10 +748,13 @@ const TablePage: React.FC<TablePageProps> = ({
                     </svg>
                 </button>
             ) : (
+                /* FIX: Use span with title to avoid SVG title prop error */
                 row.isCommitteeSelected && (
-                    <svg className="w-5 h-5 text-indigo-600 flex-shrink-0" title="Sujet à instruire en comité" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                    </svg>
+                    <span title="Sujet à instruire en comité">
+                        <svg className="w-5 h-5 text-indigo-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                        </svg>
+                    </span>
                 )
             )}
 
@@ -1031,7 +1038,8 @@ const TablePage: React.FC<TablePageProps> = ({
                       </td>
                     )})}
                     <td className="px-6 py-4 font-bold text-center">
-                      {(row.contributions || []).reduce((sum, item) => sum + safeParseFloat(item), 0).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                      {/* FIX: Add explicit type to reduce to fix '+' operator error */}
+                      {(row.contributions || []).reduce<number>((sum, item) => sum + safeParseFloat(item), 0).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                     </td>
                      <td className="px-6 py-4 text-center">
                         <button onClick={() => handleOpenCommentModal(rowIndex)} className="relative py-1 px-3 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
