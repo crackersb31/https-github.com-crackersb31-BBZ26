@@ -66,13 +66,37 @@ const SurveyPage: React.FC<SurveyPageProps> = ({ currentUser, themes, onBack }) 
 
   return (
     <div className="max-w-4xl mx-auto pb-48">
-      <header className="mb-10 flex justify-between items-center px-4">
+      <header className="mb-6 flex justify-between items-center px-4">
         <div>
           <h1 className="text-3xl font-black text-gray-800 tracking-tight">Priorisation Stratégique 2027</h1>
-          <p className="text-gray-500 mt-1">Évaluez chaque axe de réflexion pour aider aux arbitrages budgétaires.</p>
+          <p className="text-gray-500 mt-1 font-bold">Évaluez l'importance de chaque levier pour le budget 2027.</p>
         </div>
         <button onClick={onBack} className="py-2 px-6 bg-white border border-gray-200 rounded-xl shadow-sm font-bold text-gray-600 hover:bg-gray-50 transition-all">&larr; Retour</button>
       </header>
+
+      {/* Légende de l'échelle */}
+      <div className="mx-4 mb-10 bg-indigo-50 border border-indigo-100 rounded-[2rem] p-6 flex flex-col md:flex-row items-center gap-6 shadow-sm">
+        <div className="flex-1">
+          <h4 className="text-indigo-900 font-black text-sm uppercase tracking-wider mb-2 flex items-center gap-2">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            Comprendre l'échelle de 1 à 5
+          </h4>
+          <p className="text-indigo-700 text-xs font-bold leading-relaxed">
+            Notez 1 pour une priorité faible (peu d'intérêt/impact) et 5 pour une priorité haute (levier stratégique crucial).
+          </p>
+        </div>
+        <div className="flex items-center gap-4 bg-white/50 p-3 rounded-2xl border border-indigo-100">
+           <div className="text-center">
+              <span className="block text-xl font-black text-indigo-300">1</span>
+              <span className="text-[10px] font-black text-indigo-300 uppercase">Faible</span>
+           </div>
+           <div className="w-12 h-px bg-indigo-200"></div>
+           <div className="text-center">
+              <span className="block text-xl font-black text-indigo-600">5</span>
+              <span className="text-[10px] font-black text-indigo-600 uppercase">Haute</span>
+           </div>
+        </div>
+      </div>
 
       <div className="space-y-12 px-4">
         {themes.map((theme) => {
@@ -94,26 +118,33 @@ const SurveyPage: React.FC<SurveyPageProps> = ({ currentUser, themes, onBack }) 
                 </div>
               </div>
 
-              <div className="p-6 space-y-8">
+              <div className="p-6 space-y-10">
                 {theme.axes.map((axis) => (
-                  <div key={axis.id} className="flex flex-col md:flex-row md:items-center justify-between gap-4 group">
+                  <div key={axis.id} className="flex flex-col md:flex-row md:items-center justify-between gap-6 group">
                     <div className="flex-1">
-                      <p className="text-gray-700 font-bold group-hover:text-indigo-600 transition-colors">{axis.label}</p>
+                      <p className="text-gray-700 font-bold group-hover:text-indigo-600 transition-colors leading-snug">{axis.label}</p>
                     </div>
-                    <div className="flex gap-2 bg-gray-50 p-1 rounded-full">
-                      {[1, 2, 3, 4, 5].map((num) => (
-                        <button
-                          key={num}
-                          onClick={() => handleRate(axis.id, num)}
-                          className={`w-10 h-10 rounded-full font-black text-sm transition-all ${
-                            ratings[axis.id] === num 
-                              ? 'bg-indigo-600 text-white shadow-md scale-105' 
-                              : 'hover:bg-indigo-100 text-indigo-300'
-                          }`}
-                        >
-                          {num}
-                        </button>
-                      ))}
+                    <div className="relative">
+                      {/* Labels d'aide au-dessus de l'échelle */}
+                      <div className="flex justify-between px-2 mb-1">
+                        <span className="text-[9px] font-black text-gray-300 uppercase">Faible</span>
+                        <span className="text-[9px] font-black text-indigo-400 uppercase">Priorité Haute</span>
+                      </div>
+                      <div className="flex gap-2 bg-gray-50 p-1 rounded-full border border-gray-100">
+                        {[1, 2, 3, 4, 5].map((num) => (
+                          <button
+                            key={num}
+                            onClick={() => handleRate(axis.id, num)}
+                            className={`w-10 h-10 rounded-full font-black text-sm transition-all ${
+                              ratings[axis.id] === num 
+                                ? 'bg-indigo-600 text-white shadow-md scale-105' 
+                                : 'hover:bg-indigo-100 text-indigo-300'
+                            }`}
+                          >
+                            {num}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 ))}

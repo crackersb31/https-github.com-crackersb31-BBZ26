@@ -1,6 +1,8 @@
 
 
 
+
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { type RowData, type HistoryEntry, type PageConfig, type Column } from '../types';
 import { teamMembers, defaultColumns, difficultyOptions } from '../config';
@@ -1038,8 +1040,8 @@ const TablePage: React.FC<TablePageProps> = ({
                       </td>
                     )})}
                     <td className="px-6 py-4 font-bold text-center">
-                      {/* FIX: Add explicit type to reduce to fix '+' operator error */}
-                      {(row.contributions || []).reduce<number>((sum, item) => sum + safeParseFloat(item), 0).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                      {/* Removed unnecessary explicit type argument in reduce call */}
+                      {(row.contributions || []).reduce((sum, item) => sum + safeParseFloat(item), 0).toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
                     </td>
                      <td className="px-6 py-4 text-center">
                         <button onClick={() => handleOpenCommentModal(rowIndex)} className="relative py-1 px-3 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
